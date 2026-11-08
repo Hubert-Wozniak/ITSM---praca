@@ -17,14 +17,25 @@
           <span class="font-medium text-sm">Dashboard</span>
         </router-link>
         
+        <router-link to="/tickets" class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-slate-800/50 hover:text-white" active-class="bg-slate-800 text-white">
+          <TicketIcon class="w-5 h-5" :class="$route.path.includes('/tickets') ? 'text-sky-400' : 'text-slate-400'" />
+          <span class="font-medium text-sm">Zgłoszenia</span>
+        </router-link>
+
         <router-link to="/equipment" class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-slate-800/50 hover:text-white" active-class="bg-slate-800 text-white">
-          <MonitorSmartphoneIcon class="w-5 h-5" :class="$route.path === '/equipment' ? 'text-sky-400' : 'text-slate-400'" />
+          <MonitorSmartphoneIcon class="w-5 h-5" :class="$route.path.includes('/equipment') ? 'text-sky-400' : 'text-slate-400'" />
           <span class="font-medium text-sm">Ewidencja Sprzętu</span>
+        </router-link>
+
+        <router-link to="/users" class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-slate-800/50 hover:text-white" active-class="bg-slate-800 text-white">
+          <UsersIcon class="w-5 h-5" :class="$route.path.includes('/users') ? 'text-sky-400' : 'text-slate-400'" />
+          <span class="font-medium text-sm">Użytkownicy</span>
         </router-link>
       </nav>
     </div>
 
     <div class="p-4 border-t border-slate-700/50">
+      <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 px-2">Konto i rola</p>
       <div class="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-slate-800 rounded-lg transition-colors">
         <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-sm">HW</div>
         <div class="flex-1 min-w-0">
@@ -37,5 +48,11 @@
 </template>
 
 <script setup lang="ts">
-import { HeadphonesIcon, LayoutDashboardIcon, MonitorSmartphoneIcon } from 'lucide-vue-next';
+import { 
+  HeadphonesIcon, 
+  LayoutDashboardIcon, 
+  TicketIcon, 
+  MonitorSmartphoneIcon, 
+  UsersIcon 
+} from 'lucide-vue-next';
 </script>
