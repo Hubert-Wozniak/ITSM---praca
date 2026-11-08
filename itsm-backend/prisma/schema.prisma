@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Equipment {
+  id           String   @id @default(uuid())
+  name         String
+  serialNumber String   @unique
+  status       String   @default("IN_STORAGE")
+  assignedUser String?
+  location     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Ticket {
+  id          Int      @id @default(autoincrement())
+  title       String
+  category    String
+  priority    String   @default("Średni")
+  status      String   @default("NEW")
+  requester   String
+  assignee    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
