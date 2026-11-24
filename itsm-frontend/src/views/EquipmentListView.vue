@@ -5,7 +5,6 @@
         <h2 class="text-2xl font-bold text-slate-900">Zarządzanie Sprzętem</h2>
         <p class="text-slate-500 mt-1">Ewidencja przypisań i statusów urządzeń w firmie.</p>
       </div>
-      <!-- Podpinamy otwieranie modala pod przycisk -->
       <button @click="isModalOpen = true" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors">
         + Dodaj sprzęt
       </button>
@@ -47,7 +46,6 @@
               <button class="p-2 text-slate-400 hover:text-sky-500"><Edit2Icon class="w-4 h-4" /></button>
             </td>
           </tr>
-          <!-- Pusty stan, gdy szukanie nie da wyników -->
           <tr v-if="filteredEquipment.length === 0">
             <td colspan="3" class="px-6 py-8 text-center text-slate-500">
               Brak urządzeń spełniających kryteria.
@@ -57,7 +55,6 @@
       </table>
     </div>
 
-    <!-- Wstrzykujemy nasz komponent Modala -->
     <EquipmentFormModal 
       :is-open="isModalOpen" 
       @close="isModalOpen = false" 
@@ -67,43 +64,62 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { SearchIcon, Edit2Icon } from 'lucide-vue-next';
-// Importujemy nasz nowy klocek
 import EquipmentFormModal from '../components/EquipmentFormModal.vue';
 
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
-// Stan sterujący widocznością okienka
 const isModalOpen = ref(false);
 
-const equipmentList = ref([
-  { id: 'IT-LAP-001', name: 'Dell Latitude 5520', serialNumber: 'DL1X29A', status: 'IN_USE' },
-  { id: 'IT-MON-015', name: 'Monitor Dell 27"', serialNumber: 'MD27-998', status: 'IN_STORAGE' }
-]);
+const equipmentList = ref<any[]>([]);
+
+const fetchEquipment = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/equipment');
+    if (response.ok) {
+      equipmentList.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Błąd pobierania sprzętu:', error);
+  }
+};
+
+const handleAddEquipment = async (newEquipment: any) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/equipment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: newEquipment.name,
+        serialNumber: newEquipment.serialNumber,
+        status: newEquipment.status
+      })
+    });
+
+    if (response.ok) {
+      await fetchEquipment();
+      isModalOpen.value = false;
+    } else {
+      alert("Nie udało się zapisać urządzenia. Sprawdź, czy numer seryjny jest unikalny.");
+    }
+  } catch (error) {
+    console.error('Błąd podczas zapisywania:', error);
+  }
+};
 
 const filteredEquipment = computed(() => {
   return equipmentList.value.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.value.toLowerCase()) || item.serialNumber.toLowerCase().includes(searchQuery.value.toLowerCase());
+    const query = searchQuery.value.toLowerCase();
+    const matchesSearch = item.name.toLowerCase().includes(query) || item.serialNumber.toLowerCase().includes(query);
     const matchesStatus = statusFilter.value === 'ALL' || item.status === statusFilter.value;
     return matchesSearch && matchesStatus;
   });
 });
 
-// Funkcja odbierająca dane z Modala i dodająca je do naszej listy
-const handleAddEquipment = (newEquipment: any) => {
-  // Generujemy tymczasowe ID (docelowo to będzie robił backend/baza danych)
-  const newId = `IT-DEV-${Math.floor(Math.random() * 1000)}`;
-  
-  // Wpychamy nowy obiekt na sam początek tablicy
-  equipmentList.value.unshift({
-    id: newId,
-    name: newEquipment.name,
-    serialNumber: newEquipment.serialNumber,
-    status: newEquipment.status
-  });
-
-  // Zamykamy okienko po zapisie
-  isModalOpen.value = false;
-};
+onMounted(() => {
+  fetchEquipment();
+});
 </script>

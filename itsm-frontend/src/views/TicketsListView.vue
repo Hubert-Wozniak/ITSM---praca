@@ -5,7 +5,6 @@
         <h2 class="text-2xl font-bold text-slate-900">Aktywne zgłoszenia</h2>
         <p class="text-slate-500 mt-1">Zarządzanie awariami i wnioskami pracowników.</p>
       </div>
-      <!-- Zmiana 1: Otwieranie modala po kliknięciu -->
       <button @click="isModalOpen = true" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors">
         + Nowe zgłoszenie
       </button>
@@ -17,12 +16,12 @@
         <input 
           v-model="searchQuery" 
           type="text" 
-          placeholder="Szukaj po tytule lub numerze (np. IT-102)..." 
+          placeholder="Szukaj po tytule lub numerze (np. IT-1)..." 
           class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" 
         />
       </div>
       <select v-model="statusFilter" class="px-4 py-2.5 bg-white border border-slate-300 rounded-lg outline-none cursor-pointer">
-        <option value="ALL">Wszystkie aktywne</option>
+        <option value="ALL">Wszystkie zgłoszenia</option>
         <option value="NEW">Nowe</option>
         <option value="IN_PROGRESS">W toku</option>
         <option value="RESOLVED">Rozwiązane</option>
@@ -34,7 +33,7 @@
         
         <div v-for="ticket in filteredTickets" :key="ticket.id" class="p-4 hover:bg-slate-50 transition-colors flex items-center gap-4">
           <div class="w-16 text-sm font-semibold text-slate-400">
-            {{ ticket.id }}
+            IT-{{ ticket.id }}
           </div>
           
           <div class="flex-1">
@@ -44,28 +43,69 @@
               <span>•</span>
               <span>Zgłosił(a): {{ ticket.requester }}</span>
               <span>•</span>
-              <span>{{ ticket.timeAgo }}</span>
+              <span>{{ formatDate(ticket.createdAt) }}</span>
             </div>
           </div>
 
-          <div class="flex items-center gap-2 w-48 justify-end">
+          <div class="flex items-center gap-2 w-52 justify-end">
             <span :class="['px-2 py-1 rounded text-xs font-semibold', getPriorityStyle(ticket.priority)]">
               {{ ticket.priority }}
             </span>
-            <span :class="['px-2 py-1 rounded text-xs font-semibold', getStatusStyle(ticket.status)]">
-              {{ ticket.statusLabel }}
-            </span>
+
+            <select
+              :value="ticket.status"
+              @change="updateTicket(ticket.id, { status: ($event.target as HTMLSelectElement).value })"
+              :class="['px-2 py-1 rounded text-xs font-semibold outline-none cursor-pointer', getStatusStyle(ticket.status)]"
+            >
+              <option value="NEW">Nowe</option>
+              <option value="IN_PROGRESS">W toku</option>
+              <option value="RESOLVED">Rozwiązane</option>
+            </select>
           </div>
 
-          <div class="w-40 flex items-center gap-2 justify-end">
-            <div v-if="ticket.assignee" class="flex items-center gap-2">
-              <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px]">
-                {{ getInitials(ticket.assignee) }}
-              </div>
-              <span class="text-sm text-slate-600">{{ ticket.assignee }}</span>
-            </div>
-            <span v-else class="text-sm text-slate-400 italic">Nieprzypisane</span>
+          <div class="w-44 flex items-center gap-2 justify-end">
+            <template v-if="editingAssigneeId === ticket.id">
+              <input
+                v-model="assigneeInput"
+                @keyup.enter="saveAssignee(ticket.id)"
+                @keyup.esc="editingAssigneeId = null"
+                @blur="saveAssignee(ticket.id)"
+                type="text"
+                placeholder="Imię i nazwisko..."
+                class="w-36 px-2 py-1 text-xs border border-sky-400 rounded outline-none"
+                autofocus
+              />
+            </template>
+            <template v-else>
+              <button
+                v-if="ticket.assignee"
+                @click="startEditAssignee(ticket)"
+                class="flex items-center gap-2 hover:bg-slate-200/70 px-2 py-1 rounded transition-colors"
+                title="Kliknij, aby zmienić osobę"
+              >
+                <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px]">
+                  {{ getInitials(ticket.assignee) }}
+                </div>
+                <span class="text-sm text-slate-600 truncate max-w-[110px]">{{ ticket.assignee }}</span>
+              </button>
+              <button
+                v-else
+                @click="startEditAssignee(ticket)"
+                class="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 font-medium px-2 py-1 rounded hover:bg-sky-50 transition-colors"
+              >
+                <UserPlusIcon class="w-3.5 h-3.5" />
+                Przypisz
+              </button>
+            </template>
           </div>
+
+          <button
+            @click="deleteTicket(ticket.id)"
+            class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            title="Usuń zgłoszenie"
+          >
+            <Trash2Icon class="w-4 h-4" />
+          </button>
         </div>
 
         <div v-if="filteredTickets.length === 0" class="p-8 text-center text-slate-500">
@@ -75,7 +115,6 @@
       </div>
     </div>
 
-    <!-- Zmiana 2: Wstrzyknięcie Modala -->
     <TicketFormModal 
       :is-open="isModalOpen" 
       @close="isModalOpen = false" 
@@ -85,50 +124,106 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { SearchIcon } from 'lucide-vue-next';
-// Importujemy komponent modala
+import { ref, computed, onMounted } from 'vue';
+import { SearchIcon, Trash2Icon, UserPlusIcon } from 'lucide-vue-next';
 import TicketFormModal from '../components/TicketFormModal.vue';
 
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
-// Stan modala
 const isModalOpen = ref(false);
+const ticketsList = ref<any[]>([]);
 
-const ticketsList = ref([
-  { id: 'IT-102', title: 'Nie działa drukarka na 3 piętrze', category: 'Sprzęt', requester: 'Anna', timeAgo: '6 godz. temu', priority: 'Średni', status: 'IN_PROGRESS', statusLabel: 'W toku', assignee: 'Marek Wiśniewski' },
-  { id: 'IT-103', title: 'Brak dostępu do współdzielonego dysku', category: 'Dostęp / Uprawnienia', requester: 'Piotr', timeAgo: '1 godz. temu', priority: 'Wysoki', status: 'NEW', statusLabel: 'Nowe', assignee: 'Marek Wiśniewski' },
-  { id: 'IT-105', title: 'VPN rozłącza się co kilka minut', category: 'Sieć', requester: 'Piotr', timeAgo: '3 godz. temu', priority: 'Krytyczny', status: 'IN_PROGRESS', statusLabel: 'W toku', assignee: 'Katarzyna Lewandowska' },
-  { id: 'IT-106', title: 'Prośba o instalację Adobe Acrobat Pro', category: 'Oprogramowanie', requester: 'Anna', timeAgo: '24 min temu', priority: 'Niski', status: 'NEW', statusLabel: 'Nowe', assignee: null }
-]);
+const editingAssigneeId = ref<number | null>(null);
+const assigneeInput = ref('');
+
+const fetchTickets = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/tickets');
+    if (response.ok) {
+      ticketsList.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Błąd pobierania zgłoszeń:', error);
+  }
+};
+
+const handleAddTicket = async (newTicket: any) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newTicket.title,
+        category: newTicket.category,
+        priority: newTicket.priority,
+        requester: newTicket.requester
+      })
+    });
+
+    if (response.ok) {
+      await fetchTickets();
+      isModalOpen.value = false;
+    } else {
+      alert('Nie udało się zapisać zgłoszenia.');
+    }
+  } catch (error) {
+    console.error('Błąd zapisu zgłoszenia:', error);
+  }
+};
+
+const updateTicket = async (id: number, payload: { status?: string; assignee?: string | null }) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/tickets/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      await fetchTickets();
+    }
+  } catch (error) {
+    console.error('Błąd aktualizacji zgłoszenia:', error);
+  }
+};
+
+const deleteTicket = async (id: number) => {
+  if (!confirm(`Czy na pewno chcesz usunąć zgłoszenie IT-${id}?`)) return;
+
+  try {
+    const response = await fetch(`http://localhost:3000/api/tickets/${id}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      ticketsList.value = ticketsList.value.filter(t => t.id !== id);
+    }
+  } catch (error) {
+    console.error('Błąd usuwania zgłoszenia:', error);
+  }
+};
+
+const startEditAssignee = (ticket: any) => {
+  editingAssigneeId.value = ticket.id;
+  assigneeInput.value = ticket.assignee || '';
+};
+
+const saveAssignee = async (id: number) => {
+  if (editingAssigneeId.value !== id) return;
+  const trimmed = assigneeInput.value.trim();
+  editingAssigneeId.value = null;
+  await updateTicket(id, { assignee: trimmed || null });
+};
 
 const filteredTickets = computed(() => {
   return ticketsList.value.filter(t => {
     const query = searchQuery.value.toLowerCase();
-    const matchesSearch = t.title.toLowerCase().includes(query) || t.id.toLowerCase().includes(query);
+    const ticketCode = `it-${t.id}`;
+    const matchesSearch = t.title.toLowerCase().includes(query) || ticketCode.includes(query);
     const matchesStatus = statusFilter.value === 'ALL' || t.status === statusFilter.value;
     return matchesSearch && matchesStatus;
   });
 });
-
-// Zmiana 3: Funkcja obsługująca dodanie nowego zgłoszenia
-const handleAddTicket = (newTicket: any) => {
-  const newId = `IT-${Math.floor(Math.random() * 900) + 100}`; // Generuje numer od 100 do 999
-  
-  ticketsList.value.unshift({
-    id: newId,
-    title: newTicket.title,
-    category: newTicket.category,
-    requester: newTicket.requester,
-    timeAgo: 'Przed chwilą',
-    priority: newTicket.priority,
-    status: 'NEW',
-    statusLabel: 'Nowe',
-    assignee: null // Nowe zgłoszenie zawsze wpada jako nieprzypisane
-  });
-
-  isModalOpen.value = false;
-};
 
 const getPriorityStyle = (priority: string) => {
   const styles: Record<string, string> = {
@@ -142,14 +237,27 @@ const getPriorityStyle = (priority: string) => {
 
 const getStatusStyle = (status: string) => {
   const styles: Record<string, string> = {
-    'NEW': 'text-sky-600 border border-sky-200 bg-sky-50',
-    'IN_PROGRESS': 'text-amber-600 border border-amber-200 bg-amber-50',
-    'RESOLVED': 'text-emerald-600 border border-emerald-200 bg-emerald-50'
+    'NEW': 'text-sky-700 border border-sky-200 bg-sky-50',
+    'IN_PROGRESS': 'text-amber-700 border border-amber-200 bg-amber-50',
+    'RESOLVED': 'text-emerald-700 border border-emerald-200 bg-emerald-50'
   };
   return styles[status] || '';
 };
 
-const getInitials = (name: string) => {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase();
+const formatDate = (dateStr: string) => {
+  return new Date(dateStr).toLocaleString('pl-PL', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 };
+
+const getInitials = (name: string) => {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+};
+
+onMounted(() => {
+  fetchTickets();
+});
 </script>
