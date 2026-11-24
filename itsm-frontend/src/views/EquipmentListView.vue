@@ -67,34 +67,39 @@
               </select>
             </td>
 
+            <!-- WYDAWANIE SPRZĘTU PRACOWNIKOWI Z BAZY USERS -->
             <td class="py-4 px-4">
               <template v-if="editingUserId === item.id">
-                <input
-                  v-model="userInput"
-                  @keyup.enter="saveUser(item)"
-                  @keyup.esc="editingUserId = null"
-                  @blur="saveUser(item)"
-                  type="text"
-                  placeholder="Imię i nazwisko..."
-                  class="w-40 px-2.5 py-1 text-xs border border-sky-400 rounded outline-none"
+                <select
+                  :value="item.assignedUserId || ''"
+                  @change="saveUser(item, ($event.target as HTMLSelectElement).value)"
+                  @blur="editingUserId = null"
+                  class="w-48 px-2.5 py-1 text-xs border border-sky-400 rounded bg-white outline-none"
                   autofocus
-                />
+                >
+                  <option value="">— Zwróć do magazynu —</option>
+                  <option v-for="user in activeUsers" :key="user.id" :value="user.id">
+                    {{ user.firstName }} {{ user.lastName }} ({{ user.department }})
+                  </option>
+                </select>
               </template>
               <template v-else>
                 <button
                   v-if="item.assignedUser"
-                  @click="startEditUser(item)"
+                  @click="editingUserId = item.id"
                   class="flex items-center gap-2 hover:bg-slate-200/70 px-2 py-1 rounded transition-colors"
                   title="Kliknij, aby zmienić pracownika lub cofnąć wydanie"
                 >
                   <div class="w-6 h-6 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-[10px]">
-                    {{ getInitials(item.assignedUser) }}
+                    {{ getInitials(item.assignedUser.firstName, item.assignedUser.lastName) }}
                   </div>
-                  <span class="text-sm text-slate-700">{{ item.assignedUser }}</span>
+                  <span class="text-sm text-slate-700">
+                    {{ item.assignedUser.firstName }} {{ item.assignedUser.lastName }}
+                  </span>
                 </button>
                 <button
                   v-else
-                  @click="startEditUser(item)"
+                  @click="editingUserId = item.id"
                   class="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 font-medium px-2 py-1 rounded hover:bg-sky-50 transition-colors"
                 >
                   <UserPlusIcon class="w-3.5 h-3.5" />
@@ -174,12 +179,13 @@ const searchQuery = ref('');
 const statusFilter = ref('ALL');
 const isModalOpen = ref(false);
 const equipmentList = ref<any[]>([]);
+const usersList = ref<any[]>([]);
 
 const editingUserId = ref<string | null>(null);
-const userInput = ref('');
-
 const editingLocationId = ref<string | null>(null);
 const locationInput = ref('');
+
+const activeUsers = computed(() => usersList.value.filter(u => u.isActive));
 
 const fetchEquipment = async () => {
   try {
@@ -189,6 +195,17 @@ const fetchEquipment = async () => {
     }
   } catch (error) {
     console.error('Błąd pobierania sprzętu:', error);
+  }
+};
+
+const fetchUsers = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/users');
+    if (response.ok) {
+      usersList.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Błąd pobierania użytkowników:', error);
   }
 };
 
@@ -217,7 +234,7 @@ const handleAddEquipment = async (newEquipment: any) => {
 
 const updateEquipment = async (
   id: string,
-  payload: { status?: string; assignedUser?: string | null; location?: string | null }
+  payload: { status?: string; assignedUserId?: string | null; location?: string | null }
 ) => {
   try {
     const response = await fetch(`http://localhost:3000/api/equipment/${id}`, {
@@ -250,26 +267,19 @@ const deleteEquipment = async (item: any) => {
   }
 };
 
-const startEditUser = (item: any) => {
-  editingUserId.value = item.id;
-  userInput.value = item.assignedUser || '';
-};
-
-const saveUser = async (item: any) => {
-  if (editingUserId.value !== item.id) return;
-  const trimmed = userInput.value.trim();
+const saveUser = async (item: any, selectedUserId: string) => {
   editingUserId.value = null;
 
-  const nextUser = trimmed || null;
+  const nextUserId = selectedUserId || null;
   let nextStatus = item.status;
 
-  if (nextUser && item.status === 'IN_STORAGE') {
+  if (nextUserId && item.status === 'IN_STORAGE') {
     nextStatus = 'IN_USE';
-  } else if (!nextUser && item.status === 'IN_USE') {
+  } else if (!nextUserId && item.status === 'IN_USE') {
     nextStatus = 'IN_STORAGE';
   }
 
-  await updateEquipment(item.id, { assignedUser: nextUser, status: nextStatus });
+  await updateEquipment(item.id, { assignedUserId: nextUserId, status: nextStatus });
 };
 
 const startEditLocation = (item: any) => {
@@ -287,10 +297,13 @@ const saveLocation = async (id: string) => {
 const filteredEquipment = computed(() => {
   return equipmentList.value.filter(item => {
     const query = searchQuery.value.toLowerCase();
+    const userName = item.assignedUser
+      ? `${item.assignedUser.firstName} ${item.assignedUser.lastName}`.toLowerCase()
+      : '';
     const matchesSearch =
       item.name.toLowerCase().includes(query) ||
       item.serialNumber.toLowerCase().includes(query) ||
-      (item.assignedUser || '').toLowerCase().includes(query) ||
+      userName.includes(query) ||
       (item.location || '').toLowerCase().includes(query);
     const matchesStatus = statusFilter.value === 'ALL' || item.status === statusFilter.value;
     return matchesSearch && matchesStatus;
@@ -306,11 +319,12 @@ const getStatusStyle = (status: string) => {
   return styles[status] || '';
 };
 
-const getInitials = (name: string) => {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+const getInitials = (firstName: string, lastName: string) => {
+  return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase();
 };
 
 onMounted(() => {
   fetchEquipment();
+  fetchUsers();
 });
 </script>

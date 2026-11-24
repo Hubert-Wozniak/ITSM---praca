@@ -63,7 +63,10 @@
             {{ ticket.title }}
           </h3>
           <p class="text-sm text-slate-500 mt-1">
-            Zgłosił(a): <span class="font-medium text-slate-700">{{ ticket.requester }}</span>
+            Zgłosił(a):
+            <span class="font-medium text-slate-700">
+              {{ ticket.requester ? `${ticket.requester.firstName} ${ticket.requester.lastName} (${ticket.requester.department})` : 'Brak danych' }}
+            </span>
           </p>
         </div>
 
@@ -98,20 +101,22 @@
 
           <div>
             <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Technik realizujący</label>
-            <input
-              v-model="assigneeDraft"
+            <select
+              :value="ticket.assigneeId || ''"
               :disabled="ticket.status === 'RESOLVED'"
-              @blur="saveAssignee"
-              @keyup.enter="saveAssignee"
-              type="text"
-              placeholder="Nieprzypisane"
+              @change="patchTicket({ assigneeId: ($event.target as HTMLSelectElement).value || null })"
               :class="[
-                'w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 outline-none',
+                'w-full px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 outline-none',
                 ticket.status === 'RESOLVED'
                   ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                  : 'bg-white focus:border-sky-500'
+                  : 'bg-white cursor-pointer'
               ]"
-            />
+            >
+              <option value="">— Nieprzypisane —</option>
+              <option v-for="tech in technicians" :key="tech.id" :value="tech.id">
+                {{ tech.firstName }} {{ tech.lastName }}
+              </option>
+            </select>
           </div>
         </div>
 
@@ -256,7 +261,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import {
   XIcon,
   LaptopIcon,
@@ -278,15 +283,30 @@ const emit = defineEmits<{
 }>();
 
 const ticket = ref<any | null>(null);
+const usersList = ref<any[]>([]);
 const isLoading = ref(false);
 
-const assigneeDraft = ref('');
 const isEditingDescription = ref(false);
 const descriptionDraft = ref('');
 
 const newCommentAuthor = ref('');
 const newCommentContent = ref('');
 const isSubmittingComment = ref(false);
+
+const technicians = computed(() =>
+  usersList.value.filter(u => u.isActive && (u.role === 'TECHNICIAN' || u.role === 'ADMIN'))
+);
+
+const fetchUsers = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/users');
+    if (response.ok) {
+      usersList.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Błąd pobierania techników:', error);
+  }
+};
 
 const fetchTicketDetails = async (id: number) => {
   isLoading.value = true;
@@ -295,9 +315,8 @@ const fetchTicketDetails = async (id: number) => {
     if (response.ok) {
       const data = await response.json();
       ticket.value = data;
-      assigneeDraft.value = data.assignee || '';
       if (!newCommentAuthor.value && data.assignee) {
-        newCommentAuthor.value = data.assignee;
+        newCommentAuthor.value = `${data.assignee.firstName} ${data.assignee.lastName}`;
       }
     }
   } catch (error) {
@@ -313,6 +332,7 @@ watch(
     isEditingDescription.value = false;
     newCommentContent.value = '';
     if (newId !== null) {
+      fetchUsers();
       fetchTicketDetails(newId);
     } else {
       ticket.value = null;
@@ -340,13 +360,6 @@ const patchTicket = async (payload: Record<string, any>) => {
 const closeTicketAndExit = async () => {
   await patchTicket({ status: 'RESOLVED' });
   emit('close');
-};
-
-const saveAssignee = async () => {
-  if (!ticket.value || ticket.value.status === 'RESOLVED') return;
-  const trimmed = assigneeDraft.value.trim();
-  if ((ticket.value.assignee || '') === trimmed) return;
-  await patchTicket({ assignee: trimmed || null });
 };
 
 const startEditDescription = () => {

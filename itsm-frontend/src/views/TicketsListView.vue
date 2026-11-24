@@ -16,7 +16,7 @@
         <input 
           v-model="searchQuery" 
           type="text" 
-          placeholder="Szukaj po tytule, numerze (IT-1) lub sprzęcie..." 
+          placeholder="Szukaj po tytule, numerze (IT-1), pracowniku lub sprzęcie..." 
           class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" 
         />
       </div>
@@ -63,14 +63,15 @@
             <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>Kategoria: {{ ticket.category }}</span>
               <span>•</span>
-              <span>Zgłosił(a): {{ ticket.requester }}</span>
+              <span>
+                Zgłosił(a): {{ ticket.requester ? `${ticket.requester.firstName} ${ticket.requester.lastName}` : 'Brak danych' }}
+              </span>
               <span>•</span>
               <span>{{ formatDate(ticket.createdAt) }}</span>
             </div>
 
             <!-- POWIĄZANY SPRZĘT + LICZNIK KOMENTARZY -->
             <div class="mt-2 flex flex-wrap items-center gap-2">
-              <!-- Gdy zgłoszenie jest zamknięte: widok tylko do odczytu -->
               <template v-if="ticket.status === 'RESOLVED'">
                 <span
                   v-if="ticket.equipment"
@@ -82,7 +83,6 @@
                 </span>
               </template>
 
-              <!-- Gdy zgłoszenie jest aktywne: możliwość przypisania/zmiany sprzętu -->
               <template v-else-if="editingEquipmentTicketId === ticket.id">
                 <select
                   :value="ticket.equipmentId || ''"
@@ -145,41 +145,47 @@
             </select>
           </div>
 
-          <!-- PRZYPISANY TECHNIK (zablokowany dla zamkniętych zgłoszeń) -->
-          <div class="w-40 flex items-center gap-2 justify-end">
+          <!-- PRZYPISANY TECHNIK IT (lista rozwijana z bazy Users) -->
+          <div class="w-44 flex items-center gap-2 justify-end">
             <template v-if="ticket.status === 'RESOLVED'">
               <div v-if="ticket.assignee" class="flex items-center gap-2 px-2 py-1">
                 <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-[10px]">
-                  {{ getInitials(ticket.assignee) }}
+                  {{ getInitials(ticket.assignee.firstName, ticket.assignee.lastName) }}
                 </div>
-                <span class="text-sm text-slate-500 truncate max-w-[100px]">{{ ticket.assignee }}</span>
+                <span class="text-sm text-slate-500 truncate max-w-[110px]">
+                  {{ ticket.assignee.firstName }} {{ ticket.assignee.lastName }}
+                </span>
               </div>
               <span v-else class="text-xs text-slate-400 italic px-2 py-1">Nieprzypisane</span>
             </template>
 
             <template v-else-if="editingAssigneeId === ticket.id">
-              <input
-                v-model="assigneeInput"
-                @keyup.enter="saveAssignee(ticket.id)"
-                @keyup.esc="editingAssigneeId = null"
-                @blur="saveAssignee(ticket.id)"
-                type="text"
-                placeholder="Imię i nazwisko..."
-                class="w-36 px-2 py-1 text-xs border border-sky-400 rounded outline-none"
+              <select
+                :value="ticket.assigneeId || ''"
+                @change="saveAssignee(ticket.id, ($event.target as HTMLSelectElement).value)"
+                @blur="editingAssigneeId = null"
+                class="w-44 px-2 py-1 text-xs border border-sky-400 rounded bg-white outline-none"
                 autofocus
-              />
+              >
+                <option value="">— Nieprzypisane —</option>
+                <option v-for="tech in technicians" :key="tech.id" :value="tech.id">
+                  {{ tech.firstName }} {{ tech.lastName }}
+                </option>
+              </select>
             </template>
             <template v-else>
               <button
                 v-if="ticket.assignee"
                 @click="startEditAssignee(ticket)"
                 class="flex items-center gap-2 hover:bg-slate-200/70 px-2 py-1 rounded transition-colors"
-                title="Kliknij, aby zmienić osobę"
+                title="Kliknij, aby zmienić technika"
               >
-                <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px]">
-                  {{ getInitials(ticket.assignee) }}
+                <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
+                  {{ getInitials(ticket.assignee.firstName, ticket.assignee.lastName) }}
                 </div>
-                <span class="text-sm text-slate-600 truncate max-w-[100px]">{{ ticket.assignee }}</span>
+                <span class="text-sm text-slate-700 truncate max-w-[110px]">
+                  {{ ticket.assignee.firstName }} {{ ticket.assignee.lastName }}
+                </span>
               </button>
               <button
                 v-else
@@ -264,10 +270,14 @@ const isModalOpen = ref(false);
 const selectedTicketId = ref<number | null>(null);
 const ticketsList = ref<any[]>([]);
 const equipmentList = ref<any[]>([]);
+const usersList = ref<any[]>([]);
 
 const editingAssigneeId = ref<number | null>(null);
-const assigneeInput = ref('');
 const editingEquipmentTicketId = ref<number | null>(null);
+
+const technicians = computed(() =>
+  usersList.value.filter(u => u.isActive && (u.role === 'TECHNICIAN' || u.role === 'ADMIN'))
+);
 
 const fetchTickets = async () => {
   try {
@@ -291,6 +301,17 @@ const fetchEquipment = async () => {
   }
 };
 
+const fetchUsers = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/users');
+    if (response.ok) {
+      usersList.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Błąd pobierania użytkowników:', error);
+  }
+};
+
 const handleAddTicket = async (newTicket: any) => {
   try {
     const response = await fetch('http://localhost:3000/api/tickets', {
@@ -301,7 +322,7 @@ const handleAddTicket = async (newTicket: any) => {
         description: newTicket.description || null,
         category: newTicket.category,
         priority: newTicket.priority,
-        requester: newTicket.requester,
+        requesterId: newTicket.requesterId,
         equipmentId: newTicket.equipmentId || null
       })
     });
@@ -310,7 +331,8 @@ const handleAddTicket = async (newTicket: any) => {
       await fetchTickets();
       isModalOpen.value = false;
     } else {
-      alert('Nie udało się zapisać zgłoszenia.');
+      const err = await response.json().catch(() => ({}));
+      alert(err.error || 'Nie udało się zapisać zgłoszenia.');
     }
   } catch (error) {
     console.error('Błąd zapisu zgłoszenia:', error);
@@ -319,7 +341,7 @@ const handleAddTicket = async (newTicket: any) => {
 
 const updateTicket = async (
   id: number,
-  payload: { status?: string; assignee?: string | null; equipmentId?: string | null }
+  payload: { status?: string; assigneeId?: string | null; equipmentId?: string | null }
 ) => {
   try {
     const response = await fetch(`http://localhost:3000/api/tickets/${id}`, {
@@ -368,24 +390,26 @@ const deleteTicket = async (id: number) => {
 const startEditAssignee = (ticket: any) => {
   if (ticket.status === 'RESOLVED') return;
   editingAssigneeId.value = ticket.id;
-  assigneeInput.value = ticket.assignee || '';
 };
 
-const saveAssignee = async (id: number) => {
-  if (editingAssigneeId.value !== id) return;
-  const trimmed = assigneeInput.value.trim();
+const saveAssignee = async (ticketId: number, assigneeId: string) => {
   editingAssigneeId.value = null;
-  await updateTicket(id, { assignee: trimmed || null });
+  await updateTicket(ticketId, { assigneeId: assigneeId || null });
 };
 
 const filteredTickets = computed(() => {
   return ticketsList.value.filter(t => {
     const query = searchQuery.value.toLowerCase();
     const ticketCode = `it-${t.id}`;
+    const requesterName = t.requester ? `${t.requester.firstName} ${t.requester.lastName}`.toLowerCase() : '';
     const equipmentMatch =
       (t.equipment?.name || '').toLowerCase().includes(query) ||
       (t.equipment?.serialNumber || '').toLowerCase().includes(query);
-    const matchesSearch = t.title.toLowerCase().includes(query) || ticketCode.includes(query) || equipmentMatch;
+    const matchesSearch =
+      t.title.toLowerCase().includes(query) ||
+      ticketCode.includes(query) ||
+      requesterName.includes(query) ||
+      equipmentMatch;
 
     const matchesStatus =
       statusFilter.value === 'ALL'
@@ -426,12 +450,13 @@ const formatDate = (dateStr: string) => {
   });
 };
 
-const getInitials = (name: string) => {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+const getInitials = (firstName: string, lastName: string) => {
+  return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase();
 };
 
 onMounted(() => {
   fetchTickets();
   fetchEquipment();
+  fetchUsers();
 });
 </script>
