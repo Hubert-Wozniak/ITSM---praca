@@ -3,7 +3,7 @@
     <header class="flex justify-between items-end mb-8">
       <div>
         <h2 class="text-2xl font-bold text-slate-900">Aktywne zgłoszenia</h2>
-        <p class="text-slate-500 mt-1">Zarządzanie awariami i wnioskami pracowników.</p>
+        <p class="text-slate-500 mt-1">Zarządzanie awariami, dziennikiem prac i wnioskami pracowników.</p>
       </div>
       <button @click="isModalOpen = true" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors">
         + Nowe zgłoszenie
@@ -37,7 +37,14 @@
           </div>
           
           <div class="flex-1 min-w-0">
-            <h4 class="text-slate-900 font-medium mb-1">{{ ticket.title }}</h4>
+            <button
+              @click="selectedTicketId = ticket.id"
+              class="text-left group block max-w-full"
+            >
+              <h4 class="text-slate-900 font-medium mb-1 group-hover:text-sky-600 transition-colors truncate">
+                {{ ticket.title }}
+              </h4>
+            </button>
             <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>Kategoria: {{ ticket.category }}</span>
               <span>•</span>
@@ -46,8 +53,8 @@
               <span>{{ formatDate(ticket.createdAt) }}</span>
             </div>
 
-            <!-- POWIĄZANY SPRZĘT (RELACJA CMDB) -->
-            <div class="mt-2">
+            <!-- POWIĄZANY SPRZĘT + LICZNIK KOMENTARZY -->
+            <div class="mt-2 flex flex-wrap items-center gap-2">
               <template v-if="editingEquipmentTicketId === ticket.id">
                 <select
                   :value="ticket.equipmentId || ''"
@@ -82,6 +89,15 @@
                   + Powiąż sprzęt
                 </button>
               </template>
+
+              <button
+                @click="selectedTicketId = ticket.id"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-slate-600 bg-slate-100 hover:bg-sky-50 hover:text-sky-700 transition-colors"
+                title="Otwórz szczegóły i dziennik prac"
+              >
+                <MessageSquareIcon class="w-3.5 h-3.5" />
+                <span>{{ ticket._count?.comments || 0 }}</span>
+              </button>
             </div>
           </div>
 
@@ -158,17 +174,25 @@
       @close="isModalOpen = false" 
       @submit="handleAddTicket" 
     />
+
+    <TicketDetailsDrawer
+      :ticket-id="selectedTicketId"
+      @close="selectedTicketId = null"
+      @updated="fetchTickets"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { SearchIcon, Trash2Icon, UserPlusIcon, LaptopIcon } from 'lucide-vue-next';
+import { SearchIcon, Trash2Icon, UserPlusIcon, LaptopIcon, MessageSquareIcon } from 'lucide-vue-next';
 import TicketFormModal from '../components/TicketFormModal.vue';
+import TicketDetailsDrawer from '../components/TicketDetailsDrawer.vue';
 
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
 const isModalOpen = ref(false);
+const selectedTicketId = ref<number | null>(null);
 const ticketsList = ref<any[]>([]);
 const equipmentList = ref<any[]>([]);
 
@@ -205,6 +229,7 @@ const handleAddTicket = async (newTicket: any) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: newTicket.title,
+        description: newTicket.description || null,
         category: newTicket.category,
         priority: newTicket.priority,
         requester: newTicket.requester,
@@ -256,6 +281,9 @@ const deleteTicket = async (id: number) => {
     });
 
     if (response.ok) {
+      if (selectedTicketId.value === id) {
+        selectedTicketId.value = null;
+      }
       ticketsList.value = ticketsList.value.filter(t => t.id !== id);
     }
   } catch (error) {

@@ -18,6 +18,18 @@
           />
         </div>
 
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">
+            Szczegółowy opis problemu <span class="text-slate-400 font-normal">(opcjonalnie)</span>
+          </label>
+          <textarea
+            v-model="form.description"
+            rows="3"
+            placeholder="Opisz objawy usterki, treść komunikatu błędu lub okoliczności wystąpienia..."
+            class="w-full px-3.5 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none resize-none"
+          ></textarea>
+        </div>
+
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">Kategoria *</label>
@@ -99,6 +111,7 @@ const equipmentOptions = ref<any[]>([]);
 
 const form = ref({
   title: '',
+  description: '',
   category: 'Sprzęt',
   priority: 'Średni',
   requester: '',
@@ -128,11 +141,13 @@ watch(
 const handleSubmit = () => {
   emit('submit', {
     ...form.value,
+    description: form.value.description.trim() || null,
     equipmentId: form.value.equipmentId || null
   });
 
   form.value = {
     title: '',
+    description: '',
     category: 'Sprzęt',
     priority: 'Średni',
     requester: '',

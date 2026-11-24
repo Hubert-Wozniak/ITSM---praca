@@ -101,6 +101,9 @@ app.get('/api/tickets', async (req, res) => {
             name: true,
             serialNumber: true
           }
+        },
+        _count: {
+          select: { comments: true }
         }
       }
     });
@@ -111,12 +114,51 @@ app.get('/api/tickets', async (req, res) => {
   }
 });
 
+// Szczegóły pojedynczego zgłoszenia wraz z dziennikiem prac
+app.get('/api/tickets/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Nieprawidłowe ID zgłoszenia.' });
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id },
+      include: {
+        equipment: {
+          select: {
+            id: true,
+            name: true,
+            serialNumber: true,
+            location: true
+          }
+        },
+        comments: {
+          orderBy: { createdAt: 'asc' }
+        }
+      }
+    });
+
+    if (!ticket) {
+      res.status(404).json({ error: 'Nie znaleziono zgłoszenia.' });
+      return;
+    }
+
+    res.json(ticket);
+  } catch (error) {
+    console.error('Błąd pobierania szczegółów zgłoszenia:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas pobierania szczegółów.' });
+  }
+});
+
 app.post('/api/tickets', async (req, res) => {
   try {
-    const { title, category, priority, requester, equipmentId } = req.body;
+    const { title, description, category, priority, requester, equipmentId } = req.body;
     const newTicket = await prisma.ticket.create({
       data: {
         title,
+        description: description || null,
         category,
         priority: priority || 'Średni',
         status: 'NEW',
@@ -130,6 +172,9 @@ app.post('/api/tickets', async (req, res) => {
             name: true,
             serialNumber: true
           }
+        },
+        _count: {
+          select: { comments: true }
         }
       }
     });
@@ -148,11 +193,13 @@ app.patch('/api/tickets/:id', async (req, res) => {
       return;
     }
 
-    const { status, assignee, priority, equipmentId } = req.body;
+    const { title, description, status, assignee, priority, equipmentId } = req.body;
 
     const updatedTicket = await prisma.ticket.update({
       where: { id },
       data: {
+        ...(title !== undefined && { title }),
+        ...(description !== undefined && { description: description || null }),
         ...(status !== undefined && { status }),
         ...(assignee !== undefined && { assignee }),
         ...(priority !== undefined && { priority }),
@@ -165,6 +212,9 @@ app.patch('/api/tickets/:id', async (req, res) => {
             name: true,
             serialNumber: true
           }
+        },
+        _count: {
+          select: { comments: true }
         }
       }
     });
@@ -192,6 +242,56 @@ app.delete('/api/tickets/:id', async (req, res) => {
   } catch (error) {
     console.error('Błąd usuwania zgłoszenia:', error);
     res.status(500).json({ error: 'Nie udało się usunąć zgłoszenia.' });
+  }
+});
+
+// Dodanie wpisu do dziennika prac / komentarza
+app.post('/api/tickets/:id/comments', async (req, res) => {
+  try {
+    const ticketId = Number(req.params.id);
+    if (isNaN(ticketId)) {
+      res.status(400).json({ error: 'Nieprawidłowe ID zgłoszenia.' });
+      return;
+    }
+
+    const { author, content } = req.body;
+    if (!author?.trim() || !content?.trim()) {
+      res.status(400).json({ error: 'Autor i treść wpisu są wymagane.' });
+      return;
+    }
+
+    const newComment = await prisma.comment.create({
+      data: {
+        ticketId,
+        author: author.trim(),
+        content: content.trim()
+      }
+    });
+
+    res.status(201).json(newComment);
+  } catch (error) {
+    console.error('Błąd dodawania komentarza:', error);
+    res.status(500).json({ error: 'Nie udało się dodać wpisu do dziennika.' });
+  }
+});
+
+// Usunięcie pojedynczego wpisu z dziennika prac
+app.delete('/api/comments/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Nieprawidłowe ID komentarza.' });
+      return;
+    }
+
+    await prisma.comment.delete({
+      where: { id }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    console.error('Błąd usuwania komentarza:', error);
+    res.status(500).json({ error: 'Nie udało się usunąć komentarza.' });
   }
 });
 
