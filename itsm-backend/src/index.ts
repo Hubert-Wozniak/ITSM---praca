@@ -163,6 +163,70 @@ app.delete('/api/equipment/:id', async (req, res) => {
   }
 });
 
+// --- DASHBOARD (STATYSTYKI) ---
+
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const [
+      totalTickets,
+      newTickets,
+      inProgressTickets,
+      resolvedTickets,
+      criticalOpenTickets,
+      totalEquipment,
+      inStorageEquipment,
+      inUseEquipment,
+      needsReplacementEquipment,
+      recentTickets,
+      recentEquipment
+    ] = await Promise.all([
+      prisma.ticket.count(),
+      prisma.ticket.count({ where: { status: 'NEW' } }),
+      prisma.ticket.count({ where: { status: 'IN_PROGRESS' } }),
+      prisma.ticket.count({ where: { status: 'RESOLVED' } }),
+      prisma.ticket.count({
+        where: {
+          priority: 'Krytyczny',
+          status: { not: 'RESOLVED' }
+        }
+      }),
+      prisma.equipment.count(),
+      prisma.equipment.count({ where: { status: 'IN_STORAGE' } }),
+      prisma.equipment.count({ where: { status: 'IN_USE' } }),
+      prisma.equipment.count({ where: { status: 'NEEDS_REPLACEMENT' } }),
+      prisma.ticket.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.equipment.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+
+    res.json({
+      tickets: {
+        total: totalTickets,
+        new: newTickets,
+        inProgress: inProgressTickets,
+        resolved: resolvedTickets,
+        criticalOpen: criticalOpenTickets
+      },
+      equipment: {
+        total: totalEquipment,
+        inStorage: inStorageEquipment,
+        inUse: inUseEquipment,
+        needsReplacement: needsReplacementEquipment
+      },
+      recentTickets,
+      recentEquipment
+    });
+  } catch (error) {
+    console.error('Błąd pobierania danych dashboardu:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas pobierania statystyk.' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`🚀 Serwer działa na porcie http://localhost:${port}`);
 });
