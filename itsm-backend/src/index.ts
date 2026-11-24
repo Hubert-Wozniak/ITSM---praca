@@ -123,6 +123,46 @@ app.delete('/api/tickets/:id', async (req, res) => {
   }
 });
 
+// Aktualizacja statusu, przypisanego pracownika lub lokalizacji sprzętu
+app.patch('/api/equipment/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { name, serialNumber, status, assignedUser, location } = req.body;
+
+    const updatedEquipment = await prisma.equipment.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(serialNumber !== undefined && { serialNumber }),
+        ...(status !== undefined && { status }),
+        ...(assignedUser !== undefined && { assignedUser }),
+        ...(location !== undefined && { location })
+      }
+    });
+
+    res.json(updatedEquipment);
+  } catch (error) {
+    console.error('Błąd aktualizacji sprzętu:', error);
+    res.status(500).json({ error: 'Nie udało się zaktualizować sprzętu.' });
+  }
+});
+
+// Usuwanie sprzętu z ewidencji
+app.delete('/api/equipment/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+
+    await prisma.equipment.delete({
+      where: { id }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    console.error('Błąd usuwania sprzętu:', error);
+    res.status(500).json({ error: 'Nie udało się usunąć sprzętu.' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`🚀 Serwer działa na porcie http://localhost:${port}`);
 });
