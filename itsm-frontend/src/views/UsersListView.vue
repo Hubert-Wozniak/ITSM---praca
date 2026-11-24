@@ -3,7 +3,7 @@
     <header class="flex justify-between items-end mb-8">
       <div>
         <h2 class="text-2xl font-bold text-slate-900">Użytkownicy i zespół IT</h2>
-        <p class="text-slate-500 mt-1">Katalog pracowników organizacji, uprawnienia oraz przydzielone zasoby.</p>
+        <p class="text-slate-500 mt-1">Katalog pracowników organizacji, uprawnienia oraz procedury offboardingu.</p>
       </div>
       <button
         @click="openCreateModal"
@@ -59,7 +59,10 @@
             :class="['transition-colors', user.isActive ? 'hover:bg-slate-50' : 'bg-slate-50/80 opacity-65']"
           >
             <td class="py-4 px-5">
-              <div class="flex items-center gap-3">
+              <button
+                @click="selectedUserId = user.id"
+                class="flex items-center gap-3 text-left group"
+              >
                 <div
                   :class="[
                     'w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0',
@@ -69,12 +72,14 @@
                   {{ getInitials(user.firstName, user.lastName) }}
                 </div>
                 <div>
-                  <div class="font-medium text-slate-900">{{ user.firstName }} {{ user.lastName }}</div>
+                  <div class="font-medium text-slate-900 group-hover:text-sky-600 transition-colors">
+                    {{ user.firstName }} {{ user.lastName }}
+                  </div>
                   <div class="text-xs text-slate-500">
                     {{ user.email }}{{ user.phone ? ` • ${user.phone}` : '' }}
                   </div>
                 </div>
-              </div>
+              </button>
             </td>
 
             <td class="py-4 px-4">
@@ -89,7 +94,11 @@
             </td>
 
             <td class="py-4 px-4">
-              <div class="flex items-center gap-2 text-xs">
+              <button
+                @click="selectedUserId = user.id"
+                class="flex items-center gap-2 text-xs hover:opacity-80 transition-opacity"
+                title="Kliknij, aby otworzyć kartę pracownika"
+              >
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
                   <LaptopIcon class="w-3.5 h-3.5 text-slate-500" />
                   {{ user._count?.equipment || 0 }} szt.
@@ -98,7 +107,7 @@
                   <TicketIcon class="w-3.5 h-3.5 text-slate-500" />
                   {{ user._count?.requestedTickets || 0 }} zgł.
                 </span>
-              </div>
+              </button>
             </td>
 
             <td class="py-4 px-4">
@@ -119,7 +128,16 @@
             </td>
 
             <td class="py-4 px-5 text-right">
-              <div class="inline-flex items-center gap-1">
+              <div class="inline-flex items-center gap-1.5">
+                <button
+                  v-if="user.isActive"
+                  @click="offboardingUserId = user.id"
+                  class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+                  title="Rozpocznij procedurę offboardingu"
+                >
+                  <UserMinusIcon class="w-3.5 h-3.5" />
+                  Offboarding
+                </button>
                 <button
                   @click="openEditModal(user)"
                   class="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
@@ -140,7 +158,7 @@
 
           <tr v-if="filteredUsers.length === 0">
             <td colspan="6" class="p-8 text-center text-slate-500">
-              Brak użytkowników spełniających wybrane kryteria. Dodaj pierwszego pracownika przyciskiem powyżej.
+              Brak użytkowników spełniających wybrane kryteria.
             </td>
           </tr>
         </tbody>
@@ -153,6 +171,19 @@
       @close="isModalOpen = false"
       @submit="handleSaveUser"
     />
+
+    <UserDetailsDrawer
+      :user-id="selectedUserId"
+      @close="selectedUserId = null"
+      @updated="fetchUsers"
+      @start-offboarding="(id) => (offboardingUserId = id)"
+    />
+
+    <OffboardingModal
+      :user-id="offboardingUserId"
+      @close="offboardingUserId = null"
+      @completed="fetchUsers"
+    />
   </div>
 </template>
 
@@ -163,9 +194,12 @@ import {
   LaptopIcon,
   TicketIcon,
   PencilIcon,
-  Trash2Icon
+  Trash2Icon,
+  UserMinusIcon
 } from 'lucide-vue-next';
 import UserFormModal from '../components/UserFormModal.vue';
+import UserDetailsDrawer from '../components/UserDetailsDrawer.vue';
+import OffboardingModal from '../components/OffboardingModal.vue';
 
 const searchQuery = ref('');
 const roleFilter = ref('ALL');
@@ -173,6 +207,8 @@ const statusFilter = ref('ACTIVE');
 
 const isModalOpen = ref(false);
 const editingUser = ref<any | null>(null);
+const selectedUserId = ref<string | null>(null);
+const offboardingUserId = ref<string | null>(null);
 const usersList = ref<any[]>([]);
 
 const fetchUsers = async () => {
@@ -231,6 +267,9 @@ const deleteUser = async (user: any) => {
     });
 
     if (response.ok) {
+      if (selectedUserId.value === user.id) {
+        selectedUserId.value = null;
+      }
       usersList.value = usersList.value.filter(u => u.id !== user.id);
     } else {
       const err = await response.json();
