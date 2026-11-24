@@ -16,7 +16,7 @@
         <input 
           v-model="searchQuery" 
           type="text" 
-          placeholder="Szukaj po tytule lub numerze (np. IT-1)..." 
+          placeholder="Szukaj po tytule, numerze (IT-1) lub sprzęcie..." 
           class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none" 
         />
       </div>
@@ -36,14 +36,52 @@
             IT-{{ ticket.id }}
           </div>
           
-          <div class="flex-1">
+          <div class="flex-1 min-w-0">
             <h4 class="text-slate-900 font-medium mb-1">{{ ticket.title }}</h4>
-            <div class="flex items-center gap-2 text-xs text-slate-500">
+            <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>Kategoria: {{ ticket.category }}</span>
               <span>•</span>
               <span>Zgłosił(a): {{ ticket.requester }}</span>
               <span>•</span>
               <span>{{ formatDate(ticket.createdAt) }}</span>
+            </div>
+
+            <!-- POWIĄZANY SPRZĘT (RELACJA CMDB) -->
+            <div class="mt-2">
+              <template v-if="editingEquipmentTicketId === ticket.id">
+                <select
+                  :value="ticket.equipmentId || ''"
+                  @change="saveEquipmentLink(ticket.id, ($event.target as HTMLSelectElement).value)"
+                  @blur="editingEquipmentTicketId = null"
+                  class="px-2.5 py-1 text-xs border border-sky-400 rounded bg-white outline-none"
+                  autofocus
+                >
+                  <option value="">— Brak powiązanego sprzętu —</option>
+                  <option v-for="eq in equipmentList" :key="eq.id" :value="eq.id">
+                    {{ eq.name }} (S/N: {{ eq.serialNumber }})
+                  </option>
+                </select>
+              </template>
+              <template v-else>
+                <button
+                  v-if="ticket.equipment"
+                  @click="editingEquipmentTicketId = ticket.id"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+                  title="Kliknij, aby zmienić lub odpiąć sprzęt"
+                >
+                  <LaptopIcon class="w-3.5 h-3.5" />
+                  {{ ticket.equipment.name }}
+                  <span class="font-mono text-[11px] text-indigo-500">({{ ticket.equipment.serialNumber }})</span>
+                </button>
+                <button
+                  v-else
+                  @click="editingEquipmentTicketId = ticket.id"
+                  class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-600 transition-colors"
+                >
+                  <LaptopIcon class="w-3.5 h-3.5" />
+                  + Powiąż sprzęt
+                </button>
+              </template>
             </div>
           </div>
 
@@ -125,16 +163,18 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { SearchIcon, Trash2Icon, UserPlusIcon } from 'lucide-vue-next';
+import { SearchIcon, Trash2Icon, UserPlusIcon, LaptopIcon } from 'lucide-vue-next';
 import TicketFormModal from '../components/TicketFormModal.vue';
 
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
 const isModalOpen = ref(false);
 const ticketsList = ref<any[]>([]);
+const equipmentList = ref<any[]>([]);
 
 const editingAssigneeId = ref<number | null>(null);
 const assigneeInput = ref('');
+const editingEquipmentTicketId = ref<number | null>(null);
 
 const fetchTickets = async () => {
   try {
@@ -147,6 +187,17 @@ const fetchTickets = async () => {
   }
 };
 
+const fetchEquipment = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/equipment');
+    if (response.ok) {
+      equipmentList.value = await response.json();
+    }
+  } catch (error) {
+    console.error('Błąd pobierania sprzętu:', error);
+  }
+};
+
 const handleAddTicket = async (newTicket: any) => {
   try {
     const response = await fetch('http://localhost:3000/api/tickets', {
@@ -156,7 +207,8 @@ const handleAddTicket = async (newTicket: any) => {
         title: newTicket.title,
         category: newTicket.category,
         priority: newTicket.priority,
-        requester: newTicket.requester
+        requester: newTicket.requester,
+        equipmentId: newTicket.equipmentId || null
       })
     });
 
@@ -171,7 +223,10 @@ const handleAddTicket = async (newTicket: any) => {
   }
 };
 
-const updateTicket = async (id: number, payload: { status?: string; assignee?: string | null }) => {
+const updateTicket = async (
+  id: number,
+  payload: { status?: string; assignee?: string | null; equipmentId?: string | null }
+) => {
   try {
     const response = await fetch(`http://localhost:3000/api/tickets/${id}`, {
       method: 'PATCH',
@@ -185,6 +240,11 @@ const updateTicket = async (id: number, payload: { status?: string; assignee?: s
   } catch (error) {
     console.error('Błąd aktualizacji zgłoszenia:', error);
   }
+};
+
+const saveEquipmentLink = async (ticketId: number, equipmentId: string) => {
+  editingEquipmentTicketId.value = null;
+  await updateTicket(ticketId, { equipmentId: equipmentId || null });
 };
 
 const deleteTicket = async (id: number) => {
@@ -219,7 +279,10 @@ const filteredTickets = computed(() => {
   return ticketsList.value.filter(t => {
     const query = searchQuery.value.toLowerCase();
     const ticketCode = `it-${t.id}`;
-    const matchesSearch = t.title.toLowerCase().includes(query) || ticketCode.includes(query);
+    const equipmentMatch =
+      (t.equipment?.name || '').toLowerCase().includes(query) ||
+      (t.equipment?.serialNumber || '').toLowerCase().includes(query);
+    const matchesSearch = t.title.toLowerCase().includes(query) || ticketCode.includes(query) || equipmentMatch;
     const matchesStatus = statusFilter.value === 'ALL' || t.status === statusFilter.value;
     return matchesSearch && matchesStatus;
   });
@@ -259,5 +322,6 @@ const getInitials = (name: string) => {
 
 onMounted(() => {
   fetchTickets();
+  fetchEquipment();
 });
 </script>

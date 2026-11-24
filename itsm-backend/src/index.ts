@@ -14,10 +14,17 @@ app.use(express.json());
 
 // --- SPRZĘT (EQUIPMENT) ---
 
+// --- SPRZĘT (EQUIPMENT) ---
+
 app.get('/api/equipment', async (req, res) => {
   try {
     const equipment = await prisma.equipment.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { tickets: true }
+        }
+      }
     });
     res.json(equipment);
   } catch (error) {
@@ -43,87 +50,6 @@ app.post('/api/equipment', async (req, res) => {
   }
 });
 
-// --- ZGŁOSZENIA (TICKETS) ---
-
-app.get('/api/tickets', async (req, res) => {
-  try {
-    const tickets = await prisma.ticket.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json(tickets);
-  } catch (error) {
-    console.error('Błąd pobierania zgłoszeń:', error);
-    res.status(500).json({ error: 'Wystąpił błąd podczas pobierania zgłoszeń.' });
-  }
-});
-
-app.post('/api/tickets', async (req, res) => {
-  try {
-    const { title, category, priority, requester } = req.body;
-    const newTicket = await prisma.ticket.create({
-      data: {
-        title,
-        category,
-        priority: priority || 'Średni',
-        status: 'NEW',
-        requester
-      }
-    });
-    res.status(201).json(newTicket);
-  } catch (error) {
-    console.error('Błąd zapisu zgłoszenia:', error);
-    res.status(500).json({ error: 'Wystąpił błąd podczas zapisywania zgłoszenia.' });
-  }
-});
-
-// Aktualizacja statusu, priorytetu lub przypisanego technika
-app.patch('/api/tickets/:id', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) {
-      res.status(400).json({ error: 'Nieprawidłowe ID zgłoszenia.' });
-      return;
-    }
-
-    const { status, assignee, priority } = req.body;
-
-    const updatedTicket = await prisma.ticket.update({
-      where: { id },
-      data: {
-        ...(status !== undefined && { status }),
-        ...(assignee !== undefined && { assignee }),
-        ...(priority !== undefined && { priority })
-      }
-    });
-
-    res.json(updatedTicket);
-  } catch (error) {
-    console.error('Błąd aktualizacji zgłoszenia:', error);
-    res.status(500).json({ error: 'Nie udało się zaktualizować zgłoszenia.' });
-  }
-});
-
-// Usuwanie zgłoszenia
-app.delete('/api/tickets/:id', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) {
-      res.status(400).json({ error: 'Nieprawidłowe ID zgłoszenia.' });
-      return;
-    }
-
-    await prisma.ticket.delete({
-      where: { id }
-    });
-
-    res.status(204).send();
-  } catch (error) {
-    console.error('Błąd usuwania zgłoszenia:', error);
-    res.status(500).json({ error: 'Nie udało się usunąć zgłoszenia.' });
-  }
-});
-
-// Aktualizacja statusu, przypisanego pracownika lub lokalizacji sprzętu
 app.patch('/api/equipment/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
@@ -147,7 +73,6 @@ app.patch('/api/equipment/:id', async (req, res) => {
   }
 });
 
-// Usuwanie sprzętu z ewidencji
 app.delete('/api/equipment/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
@@ -160,6 +85,113 @@ app.delete('/api/equipment/:id', async (req, res) => {
   } catch (error) {
     console.error('Błąd usuwania sprzętu:', error);
     res.status(500).json({ error: 'Nie udało się usunąć sprzętu.' });
+  }
+});
+
+// --- ZGŁOSZENIA (TICKETS) ---
+
+app.get('/api/tickets', async (req, res) => {
+  try {
+    const tickets = await prisma.ticket.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        equipment: {
+          select: {
+            id: true,
+            name: true,
+            serialNumber: true
+          }
+        }
+      }
+    });
+    res.json(tickets);
+  } catch (error) {
+    console.error('Błąd pobierania zgłoszeń:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas pobierania zgłoszeń.' });
+  }
+});
+
+app.post('/api/tickets', async (req, res) => {
+  try {
+    const { title, category, priority, requester, equipmentId } = req.body;
+    const newTicket = await prisma.ticket.create({
+      data: {
+        title,
+        category,
+        priority: priority || 'Średni',
+        status: 'NEW',
+        requester,
+        equipmentId: equipmentId || null
+      },
+      include: {
+        equipment: {
+          select: {
+            id: true,
+            name: true,
+            serialNumber: true
+          }
+        }
+      }
+    });
+    res.status(201).json(newTicket);
+  } catch (error) {
+    console.error('Błąd zapisu zgłoszenia:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas zapisywania zgłoszenia.' });
+  }
+});
+
+app.patch('/api/tickets/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Nieprawidłowe ID zgłoszenia.' });
+      return;
+    }
+
+    const { status, assignee, priority, equipmentId } = req.body;
+
+    const updatedTicket = await prisma.ticket.update({
+      where: { id },
+      data: {
+        ...(status !== undefined && { status }),
+        ...(assignee !== undefined && { assignee }),
+        ...(priority !== undefined && { priority }),
+        ...(equipmentId !== undefined && { equipmentId: equipmentId || null })
+      },
+      include: {
+        equipment: {
+          select: {
+            id: true,
+            name: true,
+            serialNumber: true
+          }
+        }
+      }
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Błąd aktualizacji zgłoszenia:', error);
+    res.status(500).json({ error: 'Nie udało się zaktualizować zgłoszenia.' });
+  }
+});
+
+app.delete('/api/tickets/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Nieprawidłowe ID zgłoszenia.' });
+      return;
+    }
+
+    await prisma.ticket.delete({
+      where: { id }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    console.error('Błąd usuwania zgłoszenia:', error);
+    res.status(500).json({ error: 'Nie udało się usunąć zgłoszenia.' });
   }
 });
 

@@ -42,7 +42,16 @@
         <tbody class="divide-y divide-slate-100">
           <tr v-for="item in filteredEquipment" :key="item.id" class="hover:bg-slate-50 transition-colors">
             <td class="py-4 px-5">
-              <div class="font-medium text-slate-900">{{ item.name }}</div>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-slate-900">{{ item.name }}</span>
+                <span
+                  v-if="item._count?.tickets > 0"
+                  class="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200"
+                  title="Liczba zgłoszeń powiązanych z tym urządzeniem"
+                >
+                  {{ item._count.tickets }} zgł.
+                </span>
+              </div>
               <div class="text-xs font-mono text-slate-400 mt-0.5">S/N: {{ item.serialNumber }}</div>
             </td>
 
