@@ -2,7 +2,7 @@
   <div class="p-8 max-w-7xl mx-auto relative">
     <header class="flex justify-between items-end mb-8">
       <div>
-        <h2 class="text-2xl font-bold text-slate-900">Aktywne zgłoszenia</h2>
+        <h2 class="text-2xl font-bold text-slate-900">Zgłoszenia serwisowe</h2>
         <p class="text-slate-500 mt-1">Zarządzanie awariami, dziennikiem prac i wnioskami pracowników.</p>
       </div>
       <button @click="isModalOpen = true" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors">
@@ -21,17 +21,25 @@
         />
       </div>
       <select v-model="statusFilter" class="px-4 py-2.5 bg-white border border-slate-300 rounded-lg outline-none cursor-pointer">
+        <option value="ACTIVE">Aktywne (bez zamkniętych)</option>
         <option value="ALL">Wszystkie zgłoszenia</option>
         <option value="NEW">Nowe</option>
         <option value="IN_PROGRESS">W toku</option>
-        <option value="RESOLVED">Rozwiązane</option>
+        <option value="RESOLVED">Zamknięte</option>
       </select>
     </div>
 
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <div class="divide-y divide-slate-100">
         
-        <div v-for="ticket in filteredTickets" :key="ticket.id" class="p-4 hover:bg-slate-50 transition-colors flex items-center gap-4">
+        <div
+          v-for="ticket in filteredTickets"
+          :key="ticket.id"
+          :class="[
+            'p-4 transition-colors flex items-center gap-4',
+            ticket.status === 'RESOLVED' ? 'bg-slate-50/90 opacity-65' : 'hover:bg-slate-50'
+          ]"
+        >
           <div class="w-16 text-sm font-semibold text-slate-400">
             IT-{{ ticket.id }}
           </div>
@@ -41,7 +49,14 @@
               @click="selectedTicketId = ticket.id"
               class="text-left group block max-w-full"
             >
-              <h4 class="text-slate-900 font-medium mb-1 group-hover:text-sky-600 transition-colors truncate">
+              <h4
+                :class="[
+                  'font-medium mb-1 transition-colors truncate',
+                  ticket.status === 'RESOLVED'
+                    ? 'text-slate-600'
+                    : 'text-slate-900 group-hover:text-sky-600'
+                ]"
+              >
                 {{ ticket.title }}
               </h4>
             </button>
@@ -55,7 +70,20 @@
 
             <!-- POWIĄZANY SPRZĘT + LICZNIK KOMENTARZY -->
             <div class="mt-2 flex flex-wrap items-center gap-2">
-              <template v-if="editingEquipmentTicketId === ticket.id">
+              <!-- Gdy zgłoszenie jest zamknięte: widok tylko do odczytu -->
+              <template v-if="ticket.status === 'RESOLVED'">
+                <span
+                  v-if="ticket.equipment"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200"
+                >
+                  <LaptopIcon class="w-3.5 h-3.5" />
+                  {{ ticket.equipment.name }}
+                  <span class="font-mono text-[11px] text-slate-400">({{ ticket.equipment.serialNumber }})</span>
+                </span>
+              </template>
+
+              <!-- Gdy zgłoszenie jest aktywne: możliwość przypisania/zmiany sprzętu -->
+              <template v-else-if="editingEquipmentTicketId === ticket.id">
                 <select
                   :value="ticket.equipmentId || ''"
                   @change="saveEquipmentLink(ticket.id, ($event.target as HTMLSelectElement).value)"
@@ -72,7 +100,7 @@
               <template v-else>
                 <button
                   v-if="ticket.equipment"
-                  @click="editingEquipmentTicketId = ticket.id"
+                  @click="startEditEquipment(ticket)"
                   class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
                   title="Kliknij, aby zmienić lub odpiąć sprzęt"
                 >
@@ -82,7 +110,7 @@
                 </button>
                 <button
                   v-else
-                  @click="editingEquipmentTicketId = ticket.id"
+                  @click="startEditEquipment(ticket)"
                   class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-600 transition-colors"
                 >
                   <LaptopIcon class="w-3.5 h-3.5" />
@@ -101,7 +129,7 @@
             </div>
           </div>
 
-          <div class="flex items-center gap-2 w-52 justify-end">
+          <div class="flex items-center gap-2 w-48 justify-end">
             <span :class="['px-2 py-1 rounded text-xs font-semibold', getPriorityStyle(ticket.priority)]">
               {{ ticket.priority }}
             </span>
@@ -113,12 +141,23 @@
             >
               <option value="NEW">Nowe</option>
               <option value="IN_PROGRESS">W toku</option>
-              <option value="RESOLVED">Rozwiązane</option>
+              <option value="RESOLVED">Zamknięte</option>
             </select>
           </div>
 
-          <div class="w-44 flex items-center gap-2 justify-end">
-            <template v-if="editingAssigneeId === ticket.id">
+          <!-- PRZYPISANY TECHNIK (zablokowany dla zamkniętych zgłoszeń) -->
+          <div class="w-40 flex items-center gap-2 justify-end">
+            <template v-if="ticket.status === 'RESOLVED'">
+              <div v-if="ticket.assignee" class="flex items-center gap-2 px-2 py-1">
+                <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-[10px]">
+                  {{ getInitials(ticket.assignee) }}
+                </div>
+                <span class="text-sm text-slate-500 truncate max-w-[100px]">{{ ticket.assignee }}</span>
+              </div>
+              <span v-else class="text-xs text-slate-400 italic px-2 py-1">Nieprzypisane</span>
+            </template>
+
+            <template v-else-if="editingAssigneeId === ticket.id">
               <input
                 v-model="assigneeInput"
                 @keyup.enter="saveAssignee(ticket.id)"
@@ -140,7 +179,7 @@
                 <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px]">
                   {{ getInitials(ticket.assignee) }}
                 </div>
-                <span class="text-sm text-slate-600 truncate max-w-[110px]">{{ ticket.assignee }}</span>
+                <span class="text-sm text-slate-600 truncate max-w-[100px]">{{ ticket.assignee }}</span>
               </button>
               <button
                 v-else
@@ -153,13 +192,35 @@
             </template>
           </div>
 
-          <button
-            @click="deleteTicket(ticket.id)"
-            class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-            title="Usuń zgłoszenie"
-          >
-            <Trash2Icon class="w-4 h-4" />
-          </button>
+          <!-- PRZYCISK ZAMKNIJ / WZNÓW + USUŃ -->
+          <div class="flex items-center gap-1.5 pl-2 border-l border-slate-100">
+            <button
+              v-if="ticket.status !== 'RESOLVED'"
+              @click="updateTicket(ticket.id, { status: 'RESOLVED' })"
+              class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+              title="Zamknij zgłoszenie jako rozwiązane"
+            >
+              <CheckIcon class="w-3.5 h-3.5" />
+              Zamknij
+            </button>
+            <button
+              v-else
+              @click="updateTicket(ticket.id, { status: 'IN_PROGRESS' })"
+              class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors"
+              title="Wznów zamknięte zgłoszenie"
+            >
+              <RotateCcwIcon class="w-3.5 h-3.5" />
+              Wznów
+            </button>
+
+            <button
+              @click="deleteTicket(ticket.id)"
+              class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Usuń zgłoszenie"
+            >
+              <Trash2Icon class="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div v-if="filteredTickets.length === 0" class="p-8 text-center text-slate-500">
@@ -185,12 +246,20 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { SearchIcon, Trash2Icon, UserPlusIcon, LaptopIcon, MessageSquareIcon } from 'lucide-vue-next';
+import {
+  SearchIcon,
+  Trash2Icon,
+  UserPlusIcon,
+  LaptopIcon,
+  MessageSquareIcon,
+  CheckIcon,
+  RotateCcwIcon
+} from 'lucide-vue-next';
 import TicketFormModal from '../components/TicketFormModal.vue';
 import TicketDetailsDrawer from '../components/TicketDetailsDrawer.vue';
 
 const searchQuery = ref('');
-const statusFilter = ref('ALL');
+const statusFilter = ref('ACTIVE');
 const isModalOpen = ref(false);
 const selectedTicketId = ref<number | null>(null);
 const ticketsList = ref<any[]>([]);
@@ -267,6 +336,11 @@ const updateTicket = async (
   }
 };
 
+const startEditEquipment = (ticket: any) => {
+  if (ticket.status === 'RESOLVED') return;
+  editingEquipmentTicketId.value = ticket.id;
+};
+
 const saveEquipmentLink = async (ticketId: number, equipmentId: string) => {
   editingEquipmentTicketId.value = null;
   await updateTicket(ticketId, { equipmentId: equipmentId || null });
@@ -292,6 +366,7 @@ const deleteTicket = async (id: number) => {
 };
 
 const startEditAssignee = (ticket: any) => {
+  if (ticket.status === 'RESOLVED') return;
   editingAssigneeId.value = ticket.id;
   assigneeInput.value = ticket.assignee || '';
 };
@@ -311,7 +386,14 @@ const filteredTickets = computed(() => {
       (t.equipment?.name || '').toLowerCase().includes(query) ||
       (t.equipment?.serialNumber || '').toLowerCase().includes(query);
     const matchesSearch = t.title.toLowerCase().includes(query) || ticketCode.includes(query) || equipmentMatch;
-    const matchesStatus = statusFilter.value === 'ALL' || t.status === statusFilter.value;
+
+    const matchesStatus =
+      statusFilter.value === 'ALL'
+        ? true
+        : statusFilter.value === 'ACTIVE'
+          ? t.status !== 'RESOLVED'
+          : t.status === statusFilter.value;
+
     return matchesSearch && matchesStatus;
   });
 });
@@ -330,7 +412,7 @@ const getStatusStyle = (status: string) => {
   const styles: Record<string, string> = {
     'NEW': 'text-sky-700 border border-sky-200 bg-sky-50',
     'IN_PROGRESS': 'text-amber-700 border border-amber-200 bg-amber-50',
-    'RESOLVED': 'text-emerald-700 border border-emerald-200 bg-emerald-50'
+    'RESOLVED': 'text-slate-600 border border-slate-300 bg-slate-100'
   };
   return styles[status] || '';
 };

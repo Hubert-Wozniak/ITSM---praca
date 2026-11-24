@@ -11,13 +11,33 @@
             {{ ticket.category }} • Zgłoszono {{ formatDate(ticket.createdAt) }}
           </span>
         </div>
-        <button
-          @click="$emit('close')"
-          class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors"
-          title="Zamknij panel"
-        >
-          <XIcon class="w-5 h-5" />
-        </button>
+
+        <div class="flex items-center gap-2">
+          <button
+            v-if="ticket && ticket.status !== 'RESOLVED'"
+            @click="closeTicketAndExit"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors"
+          >
+            <CheckIcon class="w-3.5 h-3.5" />
+            Zamknij zgłoszenie
+          </button>
+          <button
+            v-else-if="ticket && ticket.status === 'RESOLVED'"
+            @click="patchTicket({ status: 'IN_PROGRESS' })"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors"
+          >
+            <RotateCcwIcon class="w-3.5 h-3.5" />
+            Wznów zgłoszenie
+          </button>
+
+          <button
+            @click="$emit('close')"
+            class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors"
+            title="Zamknij panel"
+          >
+            <XIcon class="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <!-- Zawartość główna (scrollowana) -->
@@ -26,9 +46,22 @@
       </div>
 
       <div v-else-if="ticket" class="flex-1 overflow-y-auto p-6 space-y-6">
+        <!-- Baner dla zamkniętego zgłoszenia -->
+        <div
+          v-if="ticket.status === 'RESOLVED'"
+          class="flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs text-slate-600"
+        >
+          <span>To zgłoszenie zostało zamknięte — edycja technika i sprzętu jest zablokowana.</span>
+          <button @click="patchTicket({ status: 'IN_PROGRESS' })" class="font-semibold text-sky-600 hover:underline">
+            Wznów
+          </button>
+        </div>
+
         <!-- Tytuł i zgłaszający -->
         <div>
-          <h3 class="text-xl font-bold text-slate-900 leading-snug">{{ ticket.title }}</h3>
+          <h3 :class="['text-xl font-bold leading-snug', ticket.status === 'RESOLVED' ? 'text-slate-600' : 'text-slate-900']">
+            {{ ticket.title }}
+          </h3>
           <p class="text-sm text-slate-500 mt-1">
             Zgłosił(a): <span class="font-medium text-slate-700">{{ ticket.requester }}</span>
           </p>
@@ -45,7 +78,7 @@
             >
               <option value="NEW">Nowe</option>
               <option value="IN_PROGRESS">W toku</option>
-              <option value="RESOLVED">Rozwiązane</option>
+              <option value="RESOLVED">Zamknięte</option>
             </select>
           </div>
 
@@ -67,11 +100,17 @@
             <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Technik realizujący</label>
             <input
               v-model="assigneeDraft"
+              :disabled="ticket.status === 'RESOLVED'"
               @blur="saveAssignee"
               @keyup.enter="saveAssignee"
               type="text"
               placeholder="Nieprzypisane"
-              class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white outline-none focus:border-sky-500"
+              :class="[
+                'w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 outline-none',
+                ticket.status === 'RESOLVED'
+                  ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                  : 'bg-white focus:border-sky-500'
+              ]"
             />
           </div>
         </div>
@@ -224,7 +263,9 @@ import {
   Edit3Icon,
   MessageSquareIcon,
   Trash2Icon,
-  SendIcon
+  SendIcon,
+  CheckIcon,
+  RotateCcwIcon
 } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -296,8 +337,13 @@ const patchTicket = async (payload: Record<string, any>) => {
   }
 };
 
+const closeTicketAndExit = async () => {
+  await patchTicket({ status: 'RESOLVED' });
+  emit('close');
+};
+
 const saveAssignee = async () => {
-  if (!ticket.value) return;
+  if (!ticket.value || ticket.value.status === 'RESOLVED') return;
   const trimmed = assigneeDraft.value.trim();
   if ((ticket.value.assignee || '') === trimmed) return;
   await patchTicket({ assignee: trimmed || null });
