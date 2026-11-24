@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15
@@ -13,6 +11,39 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d itsmdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./itsm-backend
+      dockerfile: Dockerfile
+    container_name: itsm-backend
+    restart: always
+    environment:
+      # Wewnątrz sieci Dockera łączymy się po nazwie usługi "postgres" na porcie 5432
+      DATABASE_URL: "postgresql://root:rootpassword@postgres:5432/itsmdb?schema=public"
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./itsm-frontend
+      dockerfile: Dockerfile
+    container_name: itsm-frontend
+    restart: always
+    ports:
+      # Mapujemy port 80 Nginxa na 5173, aby zachować dotychczasowy adres w przeglądarce
+      - "5173:80"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
