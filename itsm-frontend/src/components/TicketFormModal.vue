@@ -54,13 +54,19 @@
 
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">Osoba zgłaszająca *</label>
-          <input
-            v-model="form.requester"
-            type="text"
+          <select
+            v-model="form.requesterId"
             required
-            placeholder="Imię i nazwisko pracownika"
-            class="w-full px-3.5 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
-          />
+            class="w-full px-3.5 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none bg-white"
+          >
+            <option value="" disabled>— Wybierz pracownika z katalogu —</option>
+            <option v-for="user in activeUsers" :key="user.id" :value="user.id">
+              {{ user.firstName }} {{ user.lastName }} ({{ user.department }})
+            </option>
+          </select>
+          <p v-if="activeUsers.length === 0" class="text-xs text-amber-600 mt-1">
+            Brak aktywnych użytkowników w bazie. Dodaj pracownika w zakładce Użytkownicy.
+          </p>
         </div>
 
         <div>
@@ -70,7 +76,7 @@
           <select v-model="form.equipmentId" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg outline-none bg-white">
             <option value="">— Brak powiązanego sprzętu —</option>
             <option v-for="item in equipmentOptions" :key="item.id" :value="item.id">
-              {{ item.name }} (S/N: {{ item.serialNumber }}){{ item.assignedUser ? ` — ${item.assignedUser}` : '' }}
+              {{ item.name }} (S/N: {{ item.serialNumber }}){{ item.assignedUser ? ` — ${item.assignedUser.firstName} ${item.assignedUser.lastName}` : '' }}
             </option>
           </select>
         </div>
@@ -85,7 +91,8 @@
           </button>
           <button
             type="submit"
-            class="px-4 py-2 text-sm font-medium text-white bg-sky-500 hover:bg-sky-600 rounded-lg shadow-xs transition-colors"
+            :disabled="activeUsers.length === 0"
+            class="px-4 py-2 text-sm font-medium text-white bg-sky-500 hover:bg-sky-600 rounded-lg shadow-xs transition-colors disabled:opacity-50"
           >
             Utwórz zgłoszenie
           </button>
@@ -96,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -108,24 +115,34 @@ const emit = defineEmits<{
 }>();
 
 const equipmentOptions = ref<any[]>([]);
+const usersOptions = ref<any[]>([]);
 
 const form = ref({
   title: '',
   description: '',
   category: 'Sprzęt',
   priority: 'Średni',
-  requester: '',
+  requesterId: '',
   equipmentId: ''
 });
 
-const fetchEquipmentOptions = async () => {
+const activeUsers = computed(() => usersOptions.value.filter(u => u.isActive));
+
+const fetchModalData = async () => {
   try {
-    const response = await fetch('http://localhost:3000/api/equipment');
-    if (response.ok) {
-      equipmentOptions.value = await response.json();
+    const [eqRes, usersRes] = await Promise.all([
+      fetch('http://localhost:3000/api/equipment'),
+      fetch('http://localhost:3000/api/users')
+    ]);
+
+    if (eqRes.ok) {
+      equipmentOptions.value = await eqRes.json();
+    }
+    if (usersRes.ok) {
+      usersOptions.value = await usersRes.json();
     }
   } catch (error) {
-    console.error('Błąd pobierania listy sprzętu do modala:', error);
+    console.error('Błąd pobierania danych do formularza zgłoszenia:', error);
   }
 };
 
@@ -133,15 +150,20 @@ watch(
   () => props.isOpen,
   (opened) => {
     if (opened) {
-      fetchEquipmentOptions();
+      fetchModalData();
     }
   }
 );
 
 const handleSubmit = () => {
+  if (!form.value.requesterId) return;
+
   emit('submit', {
-    ...form.value,
+    title: form.value.title,
     description: form.value.description.trim() || null,
+    category: form.value.category,
+    priority: form.value.priority,
+    requesterId: form.value.requesterId,
     equipmentId: form.value.equipmentId || null
   });
 
@@ -150,7 +172,7 @@ const handleSubmit = () => {
     description: '',
     category: 'Sprzęt',
     priority: 'Średni',
-    requester: '',
+    requesterId: '',
     equipmentId: ''
   };
 };
