@@ -7,16 +7,36 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                   String      @id @default(uuid())
+  firstName            String
+  lastName             String
+  email                String      @unique
+  phone                String?
+  department           String
+  position             String?
+  role                 String      @default("EMPLOYEE")
+  isActive             Boolean     @default(true)
+  offboardedAt         DateTime?
+  offboardingChecklist Json?
+  equipment            Equipment[]
+  requestedTickets     Ticket[]    @relation("TicketRequester")
+  assignedTickets      Ticket[]    @relation("TicketAssignee")
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+}
+
 model Equipment {
-  id           String   @id @default(uuid())
-  name         String
-  serialNumber String   @unique
-  status       String   @default("IN_STORAGE")
-  assignedUser String?
-  location     String?
-  tickets      Ticket[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(uuid())
+  name           String
+  serialNumber   String   @unique
+  status         String   @default("IN_STORAGE")
+  assignedUserId String?
+  assignedUser   User?    @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  location       String?
+  tickets        Ticket[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Ticket {
@@ -26,8 +46,10 @@ model Ticket {
   category    String
   priority    String     @default("Średni")
   status      String     @default("NEW")
-  requester   String
-  assignee    String?
+  requesterId String
+  requester   User       @relation("TicketRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  assigneeId  String?
+  assignee    User?      @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   equipmentId String?
   equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
   comments    Comment[]

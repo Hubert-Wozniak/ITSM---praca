@@ -12,7 +12,187 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
-// --- SPRZĘT (EQUIPMENT) ---
+const userSummarySelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  department: true,
+  role: true,
+  isActive: true
+};
+
+// --- UŻYTKOWNICY (USERS) ---
+
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: [
+        { isActive: 'desc' },
+        { lastName: 'asc' },
+        { firstName: 'asc' }
+      ],
+      include: {
+        _count: {
+          select: {
+            equipment: true,
+            requestedTickets: true,
+            assignedTickets: true
+          }
+        }
+      }
+    });
+    res.json(users);
+  } catch (error) {
+    console.error('Błąd pobierania użytkowników:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas pobierania użytkowników.' });
+  }
+});
+
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        equipment: {
+          orderBy: { name: 'asc' }
+        },
+        requestedTickets: {
+          orderBy: { createdAt: 'desc' },
+          take: 15
+        },
+        assignedTickets: {
+          orderBy: { createdAt: 'desc' },
+          take: 15
+        }
+      }
+    });
+
+    if (!user) {
+      res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
+      return;
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error('Błąd pobierania szczegółów użytkownika:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas pobierania szczegółów użytkownika.' });
+  }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone, department, position, role } = req.body;
+
+    if (!firstName?.trim() || !lastName?.trim() || !email?.trim() || !department?.trim()) {
+      res.status(400).json({ error: 'Imię, nazwisko, e-mail oraz dział są wymagane.' });
+      return;
+    }
+
+    const newUser = await prisma.user.create({
+      data: {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone?.trim() || null,
+        department: department.trim(),
+        position: position?.trim() || null,
+        role: role || 'EMPLOYEE',
+        isActive: true
+      },
+      include: {
+        _count: {
+          select: {
+            equipment: true,
+            requestedTickets: true,
+            assignedTickets: true
+          }
+        }
+      }
+    });
+
+    res.status(201).json(newUser);
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      res.status(409).json({ error: 'Użytkownik o podanym adresie e-mail już istnieje.' });
+      return;
+    }
+    console.error('Błąd tworzenia użytkownika:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas zapisywania użytkownika.' });
+  }
+});
+
+app.patch('/api/users/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      department,
+      position,
+      role,
+      isActive,
+      offboardedAt,
+      offboardingChecklist
+    } = req.body;
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: {
+        ...(firstName !== undefined && { firstName: firstName.trim() }),
+        ...(lastName !== undefined && { lastName: lastName.trim() }),
+        ...(email !== undefined && { email: email.trim().toLowerCase() }),
+        ...(phone !== undefined && { phone: phone?.trim() || null }),
+        ...(department !== undefined && { department: department.trim() }),
+        ...(position !== undefined && { position: position?.trim() || null }),
+        ...(role !== undefined && { role }),
+        ...(isActive !== undefined && { isActive }),
+        ...(offboardedAt !== undefined && { offboardedAt: offboardedAt ? new Date(offboardedAt) : null }),
+        ...(offboardingChecklist !== undefined && { offboardingChecklist })
+      },
+      include: {
+        _count: {
+          select: {
+            equipment: true,
+            requestedTickets: true,
+            assignedTickets: true
+          }
+        }
+      }
+    });
+
+    res.json(updatedUser);
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      res.status(409).json({ error: 'Podany adres e-mail jest już przypisany do innego konta.' });
+      return;
+    }
+    console.error('Błąd aktualizacji użytkownika:', error);
+    res.status(500).json({ error: 'Nie udało się zaktualizować danych użytkownika.' });
+  }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    await prisma.user.delete({
+      where: { id }
+    });
+    res.status(204).send();
+  } catch (error: any) {
+    if (error?.code === 'P2003') {
+      res.status(409).json({
+        error: 'Nie można usunąć użytkownika powiązanego ze zgłoszeniami. Użyj procedury offboardingu (dezaktywacji).'
+      });
+      return;
+    }
+    console.error('Błąd usuwania użytkownika:', error);
+    res.status(500).json({ error: 'Nie udało się usunąć użytkownika.' });
+  }
+});
 
 // --- SPRZĘT (EQUIPMENT) ---
 
@@ -21,6 +201,9 @@ app.get('/api/equipment', async (req, res) => {
     const equipment = await prisma.equipment.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
+        assignedUser: {
+          select: userSummarySelect
+        },
         _count: {
           select: { tickets: true }
         }
@@ -35,12 +218,19 @@ app.get('/api/equipment', async (req, res) => {
 
 app.post('/api/equipment', async (req, res) => {
   try {
-    const { name, serialNumber, status } = req.body;
+    const { name, serialNumber, status, assignedUserId, location } = req.body;
     const newEquipment = await prisma.equipment.create({
       data: {
         name,
         serialNumber,
-        status: status || 'IN_STORAGE'
+        status: status || 'IN_STORAGE',
+        assignedUserId: assignedUserId || null,
+        location: location || null
+      },
+      include: {
+        assignedUser: {
+          select: userSummarySelect
+        }
       }
     });
     res.status(201).json(newEquipment);
@@ -53,7 +243,7 @@ app.post('/api/equipment', async (req, res) => {
 app.patch('/api/equipment/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
-    const { name, serialNumber, status, assignedUser, location } = req.body;
+    const { name, serialNumber, status, assignedUserId, location } = req.body;
 
     const updatedEquipment = await prisma.equipment.update({
       where: { id },
@@ -61,8 +251,13 @@ app.patch('/api/equipment/:id', async (req, res) => {
         ...(name !== undefined && { name }),
         ...(serialNumber !== undefined && { serialNumber }),
         ...(status !== undefined && { status }),
-        ...(assignedUser !== undefined && { assignedUser }),
+        ...(assignedUserId !== undefined && { assignedUserId: assignedUserId || null }),
         ...(location !== undefined && { location })
+      },
+      include: {
+        assignedUser: {
+          select: userSummarySelect
+        }
       }
     });
 
@@ -76,11 +271,9 @@ app.patch('/api/equipment/:id', async (req, res) => {
 app.delete('/api/equipment/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
-
     await prisma.equipment.delete({
       where: { id }
     });
-
     res.status(204).send();
   } catch (error) {
     console.error('Błąd usuwania sprzętu:', error);
@@ -95,6 +288,12 @@ app.get('/api/tickets', async (req, res) => {
     const tickets = await prisma.ticket.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
+        requester: {
+          select: userSummarySelect
+        },
+        assignee: {
+          select: userSummarySelect
+        },
         equipment: {
           select: {
             id: true,
@@ -114,7 +313,6 @@ app.get('/api/tickets', async (req, res) => {
   }
 });
 
-// Szczegóły pojedynczego zgłoszenia wraz z dziennikiem prac
 app.get('/api/tickets/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -126,6 +324,12 @@ app.get('/api/tickets/:id', async (req, res) => {
     const ticket = await prisma.ticket.findUnique({
       where: { id },
       include: {
+        requester: {
+          select: userSummarySelect
+        },
+        assignee: {
+          select: userSummarySelect
+        },
         equipment: {
           select: {
             id: true,
@@ -154,18 +358,31 @@ app.get('/api/tickets/:id', async (req, res) => {
 
 app.post('/api/tickets', async (req, res) => {
   try {
-    const { title, description, category, priority, requester, equipmentId } = req.body;
+    const { title, description, category, priority, requesterId, assigneeId, equipmentId } = req.body;
+
+    if (!title?.trim() || !requesterId) {
+      res.status(400).json({ error: 'Temat zgłoszenia oraz osoba zgłaszająca są wymagane.' });
+      return;
+    }
+
     const newTicket = await prisma.ticket.create({
       data: {
-        title,
+        title: title.trim(),
         description: description || null,
         category,
         priority: priority || 'Średni',
         status: 'NEW',
-        requester,
+        requesterId,
+        assigneeId: assigneeId || null,
         equipmentId: equipmentId || null
       },
       include: {
+        requester: {
+          select: userSummarySelect
+        },
+        assignee: {
+          select: userSummarySelect
+        },
         equipment: {
           select: {
             id: true,
@@ -193,7 +410,7 @@ app.patch('/api/tickets/:id', async (req, res) => {
       return;
     }
 
-    const { title, description, status, assignee, priority, equipmentId } = req.body;
+    const { title, description, status, requesterId, assigneeId, priority, equipmentId } = req.body;
 
     const updatedTicket = await prisma.ticket.update({
       where: { id },
@@ -201,11 +418,18 @@ app.patch('/api/tickets/:id', async (req, res) => {
         ...(title !== undefined && { title }),
         ...(description !== undefined && { description: description || null }),
         ...(status !== undefined && { status }),
-        ...(assignee !== undefined && { assignee }),
+        ...(requesterId !== undefined && { requesterId }),
+        ...(assigneeId !== undefined && { assigneeId: assigneeId || null }),
         ...(priority !== undefined && { priority }),
         ...(equipmentId !== undefined && { equipmentId: equipmentId || null })
       },
       include: {
+        requester: {
+          select: userSummarySelect
+        },
+        assignee: {
+          select: userSummarySelect
+        },
         equipment: {
           select: {
             id: true,
@@ -245,7 +469,6 @@ app.delete('/api/tickets/:id', async (req, res) => {
   }
 });
 
-// Dodanie wpisu do dziennika prac / komentarza
 app.post('/api/tickets/:id/comments', async (req, res) => {
   try {
     const ticketId = Number(req.params.id);
@@ -275,7 +498,6 @@ app.post('/api/tickets/:id/comments', async (req, res) => {
   }
 });
 
-// Usunięcie pojedynczego wpisu z dziennika prac
 app.delete('/api/comments/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -328,11 +550,21 @@ app.get('/api/dashboard', async (req, res) => {
       prisma.equipment.count({ where: { status: 'NEEDS_REPLACEMENT' } }),
       prisma.ticket.findMany({
         take: 5,
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
+        include: {
+          requester: {
+            select: { id: true, firstName: true, lastName: true }
+          }
+        }
       }),
       prisma.equipment.findMany({
         take: 5,
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
+        include: {
+          assignedUser: {
+            select: { id: true, firstName: true, lastName: true }
+          }
+        }
       })
     ]);
 

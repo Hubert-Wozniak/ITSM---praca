@@ -179,7 +179,9 @@
                 <span class="text-xs font-semibold text-slate-400">IT-{{ ticket.id }}</span>
                 <p class="text-sm font-medium text-slate-900 truncate">{{ ticket.title }}</p>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">Zgłosił(a): {{ ticket.requester }}</p>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Zgłosił(a): {{ ticket.requester ? `${ticket.requester.firstName} ${ticket.requester.lastName}` : 'Brak danych' }}
+              </p>
             </div>
             <span :class="['px-2 py-0.5 rounded text-xs font-semibold shrink-0', getTicketStatusStyle(ticket.status)]">
               {{ getTicketStatusLabel(ticket.status) }}
@@ -203,9 +205,8 @@
         <div class="divide-y divide-slate-100">
           <div v-for="item in stats.recentEquipment" :key="item.id" class="p-4 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors">
             <div class="min-w-0">
-              <p class="text-sm font-medium text-slate-900 truncate">{{ item.name }}</p>
               <p class="text-xs text-slate-500 mt-0.5">
-                S/N: {{ item.serialNumber }} • {{ item.assignedUser ? `Wydano: ${item.assignedUser}` : 'W magazynie' }}
+                S/N: {{ item.serialNumber }} • {{ item.assignedUser ? `Wydano: ${item.assignedUser.firstName} ${item.assignedUser.lastName}` : 'W magazynie' }}
               </p>
             </div>
             <span :class="['px-2 py-0.5 rounded text-xs font-semibold shrink-0', getEquipmentStatusStyle(item.status)]">
