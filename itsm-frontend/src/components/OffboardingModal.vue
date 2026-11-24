@@ -89,8 +89,7 @@
             <AlertTriangleIcon class="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div class="text-xs text-amber-900">
               <span class="font-semibold">Uwaga (rola serwisowa):</span>
-              Pracownik ma nadal przypisane aktywne zgłoszenia ({{ openAssignedTickets.map(t => `IT-${t.id}`).join(', ') }}). Przekaż je innemu technikowi przed lub po dezaktywacji konta.
-            </div>
+                Pracownik ma nadal przypisane aktywne zgłoszenia ({{ openAssignedTicketCodes }}). Przekaż je innemu technikowi przed lub po dezaktywacji konta.            </div>
           </div>
         </div>
 
@@ -238,6 +237,10 @@ const hasUnreturnedEquipment = computed(() => (user.value?.equipment?.length || 
 
 const openAssignedTickets = computed(() =>
   (user.value?.assignedTickets || []).filter((t: any) => t.status !== 'RESOLVED')
+);
+
+const openAssignedTicketCodes = computed(() =>
+  openAssignedTickets.value.map((t: any) => `IT-${t.id}`).join(', ')
 );
 
 const completedCount = computed(() => checklistItems.value.filter(i => i.checked).length);
