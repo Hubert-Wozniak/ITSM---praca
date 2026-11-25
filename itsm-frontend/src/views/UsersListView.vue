@@ -3,10 +3,10 @@
     <header class="flex justify-between items-end mb-8">
       <div>
         <h2 class="text-2xl font-bold text-slate-900">Użytkownicy i zespół IT</h2>
-        <p class="text-slate-500 mt-1">Katalog pracowników organizacji, uprawnienia oraz procedury offboardingu.</p>
+        <p class="text-slate-500 mt-1">Katalog pracowników organizacji, uprawnienia oraz przydzielone zasoby.</p>
       </div>
       <button
-        @click="openCreateModal"
+        @click="isCreateModalOpen = true"
         class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors"
       >
         + Dodaj pracownika
@@ -49,20 +49,21 @@
             <th class="py-3.5 px-4">Rola</th>
             <th class="py-3.5 px-4">Zasoby i zgłoszenia</th>
             <th class="py-3.5 px-4">Status konta</th>
-            <th class="py-3.5 px-5 text-right">Akcje</th>
+            <th class="py-3.5 px-5 text-right w-14"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
           <tr
             v-for="user in filteredUsers"
             :key="user.id"
-            :class="['transition-colors', user.isActive ? 'hover:bg-slate-50' : 'bg-slate-50/80 opacity-65']"
+            @click="selectedUserId = user.id"
+            :class="[
+              'cursor-pointer transition-colors group',
+              user.isActive ? 'hover:bg-slate-50' : 'bg-slate-50/80 opacity-65 hover:opacity-85'
+            ]"
           >
             <td class="py-4 px-5">
-              <button
-                @click="selectedUserId = user.id"
-                class="flex items-center gap-3 text-left group"
-              >
+              <div class="flex items-center gap-3">
                 <div
                   :class="[
                     'w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0',
@@ -79,7 +80,7 @@
                     {{ user.email }}{{ user.phone ? ` • ${user.phone}` : '' }}
                   </div>
                 </div>
-              </button>
+              </div>
             </td>
 
             <td class="py-4 px-4">
@@ -94,11 +95,7 @@
             </td>
 
             <td class="py-4 px-4">
-              <button
-                @click="selectedUserId = user.id"
-                class="flex items-center gap-2 text-xs hover:opacity-80 transition-opacity"
-                title="Kliknij, aby otworzyć kartę pracownika"
-              >
+              <div class="flex items-center gap-2 text-xs">
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
                   <LaptopIcon class="w-3.5 h-3.5 text-slate-500" />
                   {{ user._count?.equipment || 0 }} szt.
@@ -107,7 +104,7 @@
                   <TicketIcon class="w-3.5 h-3.5 text-slate-500" />
                   {{ user._count?.requestedTickets || 0 }} zgł.
                 </span>
-              </button>
+              </div>
             </td>
 
             <td class="py-4 px-4">
@@ -128,24 +125,14 @@
             </td>
 
             <td class="py-4 px-5 text-right">
-              <div class="inline-flex items-center gap-1.5">
-                <button
-                  v-if="user.isActive"
-                  @click="offboardingUserId = user.id"
-                  class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
-                  title="Rozpocznij procedurę offboardingu"
-                >
-                  <UserMinusIcon class="w-3.5 h-3.5" />
-                  Offboarding
-                </button>
-                <button
-                  @click="openEditModal(user)"
-                  class="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
-                  title="Edytuj dane pracownika"
-                >
-                  <PencilIcon class="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                @click.stop="selectedUserId = user.id"
+                class="p-1.5 text-slate-400 group-hover:text-sky-600 group-hover:bg-sky-50 rounded-lg transition-colors"
+                title="Otwórz kartę pracownika"
+              >
+                <ChevronRightIcon class="w-4 h-4" />
+              </button>
             </td>
           </tr>
 
@@ -159,10 +146,10 @@
     </div>
 
     <UserFormModal
-      :is-open="isModalOpen"
-      :user-to-edit="editingUser"
-      @close="isModalOpen = false"
-      @submit="handleSaveUser"
+      :is-open="isCreateModalOpen"
+      :user-to-edit="null"
+      @close="isCreateModalOpen = false"
+      @submit="handleCreateUser"
     />
 
     <UserDetailsDrawer
@@ -186,8 +173,7 @@ import {
   SearchIcon,
   LaptopIcon,
   TicketIcon,
-  PencilIcon,
-  UserMinusIcon
+  ChevronRightIcon
 } from 'lucide-vue-next';
 import UserFormModal from '../components/UserFormModal.vue';
 import UserDetailsDrawer from '../components/UserDetailsDrawer.vue';
@@ -197,8 +183,7 @@ const searchQuery = ref('');
 const roleFilter = ref('ALL');
 const statusFilter = ref('ACTIVE');
 
-const isModalOpen = ref(false);
-const editingUser = ref<any | null>(null);
+const isCreateModalOpen = ref(false);
 const selectedUserId = ref<string | null>(null);
 const offboardingUserId = ref<string | null>(null);
 const usersList = ref<any[]>([]);
@@ -214,33 +199,17 @@ const fetchUsers = async () => {
   }
 };
 
-const openCreateModal = () => {
-  editingUser.value = null;
-  isModalOpen.value = true;
-};
-
-const openEditModal = (user: any) => {
-  editingUser.value = user;
-  isModalOpen.value = true;
-};
-
-const handleSaveUser = async (payload: any) => {
+const handleCreateUser = async (payload: any) => {
   try {
-    const isEdit = Boolean(editingUser.value?.id);
-    const url = isEdit
-      ? `http://localhost:3000/api/users/${editingUser.value.id}`
-      : 'http://localhost:3000/api/users';
-
-    const response = await fetch(url, {
-      method: isEdit ? 'PATCH' : 'POST',
+    const response = await fetch('http://localhost:3000/api/users', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
     if (response.ok) {
       await fetchUsers();
-      isModalOpen.value = false;
-      editingUser.value = null;
+      isCreateModalOpen.value = false;
     } else {
       const err = await response.json();
       alert(err.error || 'Nie udało się zapisać danych użytkownika.');

@@ -2,13 +2,13 @@
   <div v-if="userId !== null" class="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs" @click.self="$emit('close')">
     <aside class="w-full max-w-2xl bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
       <!-- Nagłówek panelu -->
-      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
-        <div class="flex items-center gap-3">
-          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Karta pracownika</span>
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70 gap-2">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">Karta pracownika</span>
           <span
             v-if="user"
             :class="[
-              'px-2.5 py-0.5 rounded-full text-xs font-semibold border',
+              'px-2.5 py-0.5 rounded-full text-xs font-semibold border shrink-0',
               user.isActive
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                 : 'bg-slate-100 text-slate-600 border-slate-300'
@@ -18,14 +18,24 @@
           </span>
         </div>
 
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button
+            v-if="user"
+            @click="isEditModalOpen = true"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors"
+            title="Edytuj dane pracownika"
+          >
+            <PencilIcon class="w-3.5 h-3.5" />
+            Edytuj
+          </button>
+
           <button
             v-if="user && user.isActive"
             @click="triggerOffboarding"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
           >
             <UserMinusIcon class="w-3.5 h-3.5" />
-            Rozpocznij offboarding
+            Offboarding
           </button>
 
           <button
@@ -200,6 +210,13 @@
           </div>
         </div>
       </div>
+
+      <UserFormModal
+        :is-open="isEditModalOpen"
+        :user-to-edit="user"
+        @close="isEditModalOpen = false"
+        @submit="handleUpdateUser"
+      />
     </aside>
   </div>
 </template>
@@ -216,9 +233,11 @@ import {
   RotateCcwIcon,
   ClipboardCheckIcon,
   CheckIcon,
-  Trash2Icon
+  Trash2Icon,
+  PencilIcon
 } from 'lucide-vue-next';
 import { useCurrentRole } from '../composables/useCurrentRole';
+import UserFormModal from './UserFormModal.vue';
 
 const props = defineProps<{
   userId: string | null;
@@ -233,6 +252,7 @@ const emit = defineEmits<{
 const { isAdmin } = useCurrentRole();
 const user = ref<any | null>(null);
 const isLoading = ref(false);
+const isEditModalOpen = ref(false);
 
 const fetchUserDetails = async (id: string) => {
   isLoading.value = true;
@@ -251,6 +271,7 @@ const fetchUserDetails = async (id: string) => {
 watch(
   () => props.userId,
   (newId) => {
+    isEditModalOpen.value = false;
     if (newId !== null) {
       fetchUserDetails(newId);
     } else {
@@ -258,6 +279,28 @@ watch(
     }
   }
 );
+
+const handleUpdateUser = async (payload: any) => {
+  if (!user.value) return;
+  try {
+    const response = await fetch(`http://localhost:3000/api/users/${user.value.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      isEditModalOpen.value = false;
+      await fetchUserDetails(user.value.id);
+      emit('updated');
+    } else {
+      const err = await response.json().catch(() => ({}));
+      alert(err.error || 'Nie udało się zapisać zmian.');
+    }
+  } catch (error) {
+    console.error('Błąd aktualizacji pracownika:', error);
+  }
+};
 
 const triggerOffboarding = () => {
   if (!user.value) return;

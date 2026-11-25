@@ -41,7 +41,7 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-          <tr v-for="item in filteredEquipment" :key="item.id" class="hover:bg-slate-50 transition-colors">
+          <tr v-for="item in filteredEquipment" :key="item.id" class="hover:bg-slate-50 transition-colors group">
             <td class="py-4 px-5">
               <div class="flex items-center gap-2">
                 <button
@@ -156,12 +156,12 @@
               </template>
             </td>
 
-            <!-- AKCJE CYKLU ŻYCIA (Odbierz / Zatwierdź na magazyn) -->
+            <!-- AKCJE CYKLU ŻYCIA + STRZAŁKA KARTY URZĄDZENIA -->
             <td class="py-4 px-5 text-right">
               <div class="inline-flex items-center justify-end gap-1.5">
                 <button
                   v-if="item.assignedUser || item.status === 'IN_USE'"
-                  @click="returningEquipment = item"
+                  @click.stop="returningEquipment = item"
                   class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors"
                   title="Odbierz sprzęt od pracownika z checklistą"
                 >
@@ -171,7 +171,7 @@
 
                 <button
                   v-else-if="item.status === 'RETURNED'"
-                  @click="updateEquipment(item.id, { status: 'IN_STORAGE' })"
+                  @click.stop="updateEquipment(item.id, { status: 'IN_STORAGE' })"
                   class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
                   title="Oznacz sprzęt jako przygotowany i gotowy do ponownego wydania"
                 >
@@ -180,11 +180,12 @@
                 </button>
 
                 <button
-                  v-else
-                  @click="selectedEquipmentId = item.id"
-                  class="px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                  type="button"
+                  @click.stop="selectedEquipmentId = item.id"
+                  class="p-1.5 text-slate-400 group-hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
+                  title="Otwórz kartę urządzenia i historię powierzeń"
                 >
-                  Karta
+                  <ChevronRightIcon class="w-4 h-4" />
                 </button>
               </div>
             </td>
@@ -226,7 +227,8 @@ import {
   UserPlusIcon,
   MapPinIcon,
   Undo2Icon,
-  CheckIcon
+  CheckIcon,
+  ChevronRightIcon
 } from 'lucide-vue-next';
 import EquipmentFormModal from '../components/EquipmentFormModal.vue';
 import EquipmentReturnModal from '../components/EquipmentReturnModal.vue';

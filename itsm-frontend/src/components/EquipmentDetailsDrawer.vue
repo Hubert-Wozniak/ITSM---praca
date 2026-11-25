@@ -79,6 +79,51 @@
           </div>
         </div>
 
+        <!-- Oś czasu historii cyklu życia i powierzeń -->
+        <div>
+          <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+            <HistoryIcon class="w-4 h-4 text-slate-400" />
+            Historia cyklu życia i powierzeń ({{ item.history?.length || 0 }})
+          </h4>
+
+          <div v-if="item.history && item.history.length > 0" class="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200">
+            <div v-for="entry in item.history" :key="entry.id" class="relative">
+              <!-- Punkt na osi czasu -->
+              <div
+                :class="[
+                  'absolute -left-6 top-0.5 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center shadow-2xs',
+                  getHistoryBadgeStyle(entry.action)
+                ]"
+              >
+                <component :is="getHistoryIcon(entry.action)" class="w-3 h-3" />
+              </div>
+
+              <div class="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-xs font-semibold text-slate-900">
+                    {{ getHistoryActionLabel(entry.action) }}
+                  </span>
+                  <span class="text-[11px] text-slate-400">
+                    {{ formatDate(entry.createdAt) }}
+                  </span>
+                </div>
+
+                <p v-if="getHistoryUserDisplay(entry)" class="text-xs text-slate-700 mt-1">
+                  Pracownik: <span class="font-semibold">{{ getHistoryUserDisplay(entry) }}</span>
+                </p>
+
+                <p v-if="entry.notes" class="text-xs text-slate-500 mt-1">
+                  {{ entry.notes }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
+            Brak wcześniejszych wpisów historii. Każde kolejne wydanie, odbiór lub zmiana statusu urządzenia zostanie automatycznie zapisana na osi czasu.
+          </div>
+        </div>
+
         <!-- Protokół ostatniego odbioru (jeśli istnieje) -->
         <div
           v-if="item.lastReturnChecklist"
@@ -152,7 +197,14 @@ import {
   Trash2Icon,
   CheckIcon,
   ClipboardCheckIcon,
-  TicketIcon
+  TicketIcon,
+  HistoryIcon,
+  PlusCircleIcon,
+  UserPlusIcon,
+  ArrowRightLeftIcon,
+  Undo2Icon,
+  WrenchIcon,
+  PackageCheckIcon
 } from 'lucide-vue-next';
 import { useCurrentRole } from '../composables/useCurrentRole';
 
@@ -226,6 +278,49 @@ const deleteEquipmentPermanently = async () => {
   } catch (error) {
     console.error('Błąd usuwania urządzenia:', error);
   }
+};
+
+const getHistoryActionLabel = (action: string) => {
+  const labels: Record<string, string> = {
+    CREATED: 'Przyjęto do ewidencji',
+    ASSIGNED: 'Wydano pracownikowi',
+    TRANSFERRED: 'Przekazano innemu pracownikowi',
+    RETURNED: 'Odebrano od pracownika',
+    NEEDS_REPLACEMENT: 'Skierowano do naprawy / wymiany',
+    IN_STORAGE: 'Przyjęto na magazyn (gotowe)'
+  };
+  return labels[action] || action;
+};
+
+const getHistoryBadgeStyle = (action: string) => {
+  const styles: Record<string, string> = {
+    CREATED: 'bg-sky-100 text-sky-700',
+    ASSIGNED: 'bg-emerald-100 text-emerald-700',
+    TRANSFERRED: 'bg-indigo-100 text-indigo-700',
+    RETURNED: 'bg-purple-100 text-purple-700',
+    NEEDS_REPLACEMENT: 'bg-amber-100 text-amber-700',
+    IN_STORAGE: 'bg-slate-200 text-slate-700'
+  };
+  return styles[action] || 'bg-slate-200 text-slate-700';
+};
+
+const getHistoryIcon = (action: string) => {
+  const icons: Record<string, any> = {
+    CREATED: PlusCircleIcon,
+    ASSIGNED: UserPlusIcon,
+    TRANSFERRED: ArrowRightLeftIcon,
+    RETURNED: Undo2Icon,
+    NEEDS_REPLACEMENT: WrenchIcon,
+    IN_STORAGE: PackageCheckIcon
+  };
+  return icons[action] || HistoryIcon;
+};
+
+const getHistoryUserDisplay = (entry: any) => {
+  if (entry.user) {
+    return `${entry.user.firstName} ${entry.user.lastName} (${entry.user.department})`;
+  }
+  return entry.userName || '';
 };
 
 const getRequesterDisplay = (ticket: any) => {

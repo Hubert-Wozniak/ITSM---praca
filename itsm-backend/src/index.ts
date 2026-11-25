@@ -234,6 +234,10 @@ app.delete('/api/users/:id', async (req, res) => {
         where: { assigneeId: id },
         data: { assigneeName: fullNameSnapshot }
       }),
+      prisma.equipmentHistory.updateMany({
+        where: { userId: id },
+        data: { userName: fullNameSnapshot }
+      }),
       prisma.user.delete({
         where: { id }
       })
@@ -284,6 +288,14 @@ app.get('/api/equipment/:id', async (req, res) => {
               select: userSummarySelect
             }
           }
+        },
+        history: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: {
+              select: userSummarySelect
+            }
+          }
         }
       }
     });
@@ -303,11 +315,13 @@ app.get('/api/equipment/:id', async (req, res) => {
 app.post('/api/equipment', async (req, res) => {
   try {
     const { name, serialNumber, status, assignedUserId, location } = req.body;
+    const initialStatus = status || 'IN_STORAGE';
+
     const newEquipment = await prisma.equipment.create({
       data: {
         name,
         serialNumber,
-        status: status || 'IN_STORAGE',
+        status: initialStatus,
         assignedUserId: assignedUserId || null,
         location: location || null
       },
@@ -317,6 +331,27 @@ app.post('/api/equipment', async (req, res) => {
         }
       }
     });
+
+    await prisma.equipmentHistory.create({
+      data: {
+        equipmentId: newEquipment.id,
+        action: 'CREATED',
+        notes: initialStatus === 'NEEDS_REPLACEMENT' ? 'Dodano z oznaczeniem: Do wymiany / naprawy' : 'Przyjęto do ewidencji CMDB'
+      }
+    });
+
+    if (newEquipment.assignedUserId && newEquipment.assignedUser) {
+      await prisma.equipmentHistory.create({
+        data: {
+          equipmentId: newEquipment.id,
+          userId: newEquipment.assignedUserId,
+          userName: `${newEquipment.assignedUser.firstName} ${newEquipment.assignedUser.lastName}`,
+          action: 'ASSIGNED',
+          createdAt: new Date(Date.now() + 1)
+        }
+      });
+    }
+
     res.status(201).json(newEquipment);
   } catch (error) {
     console.error('Błąd zapisu sprzętu:', error);
@@ -337,6 +372,20 @@ app.patch('/api/equipment/:id', async (req, res) => {
       lastReturnChecklist
     } = req.body;
 
+    const existing = await prisma.equipment.findUnique({
+      where: { id },
+      include: {
+        assignedUser: {
+          select: { id: true, firstName: true, lastName: true }
+        }
+      }
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: 'Nie znaleziono urządzenia.' });
+      return;
+    }
+
     const updatedEquipment = await prisma.equipment.update({
       where: { id },
       data: {
@@ -354,6 +403,102 @@ app.patch('/api/equipment/:id', async (req, res) => {
         }
       }
     });
+
+    const prevUserName = existing.assignedUser
+      ? `${existing.assignedUser.firstName} ${existing.assignedUser.lastName}`
+      : null;
+    const nextUserName = updatedEquipment.assignedUser
+      ? `${updatedEquipment.assignedUser.firstName} ${updatedEquipment.assignedUser.lastName}`
+      : null;
+
+    const userChanged =
+      assignedUserId !== undefined && existing.assignedUserId !== updatedEquipment.assignedUserId;
+    const statusChanged = status !== undefined && existing.status !== updatedEquipment.status;
+
+    const historyEntries: Array<{
+      equipmentId: string;
+      userId?: string | null;
+      userName?: string | null;
+      action: string;
+      notes?: string | null;
+      createdAt?: Date;
+    }> = [];
+
+    if (userChanged) {
+      if (!existing.assignedUserId && updatedEquipment.assignedUserId) {
+        historyEntries.push({
+          equipmentId: id,
+          userId: updatedEquipment.assignedUserId,
+          userName: nextUserName,
+          action: 'ASSIGNED'
+        });
+      } else if (existing.assignedUserId && updatedEquipment.assignedUserId) {
+        historyEntries.push({
+          equipmentId: id,
+          userId: updatedEquipment.assignedUserId,
+          userName: nextUserName,
+          action: 'TRANSFERRED',
+          notes: prevUserName ? `Poprzedni użytkownik: ${prevUserName}` : null
+        });
+      } else if (existing.assignedUserId && !updatedEquipment.assignedUserId) {
+        historyEntries.push({
+          equipmentId: id,
+          userId: existing.assignedUserId,
+          userName: prevUserName,
+          action: 'RETURNED',
+          notes: lastReturnChecklist?.notes || null
+        });
+      }
+    }
+
+    if (statusChanged) {
+      if (updatedEquipment.status === 'NEEDS_REPLACEMENT') {
+        historyEntries.push({
+          equipmentId: id,
+          userId: updatedEquipment.assignedUserId,
+          userName: nextUserName,
+          action: 'NEEDS_REPLACEMENT',
+          createdAt: new Date(Date.now() + 1)
+        });
+      } else if (updatedEquipment.status === 'IN_STORAGE') {
+        let storageNote: string | null = null;
+        if (existing.status === 'NEEDS_REPLACEMENT') {
+          storageNote = 'Powrót z serwisu / naprawy na magazyn';
+        } else if (existing.status === 'RETURNED') {
+          storageNote = 'Zakończono przygotowanie po zwrocie od pracownika';
+        }
+        historyEntries.push({
+          equipmentId: id,
+          userId: updatedEquipment.assignedUserId,
+          userName: nextUserName,
+          action: 'IN_STORAGE',
+          notes: storageNote,
+          createdAt: new Date(Date.now() + 1)
+        });
+      } else if (updatedEquipment.status === 'RETURNED' && !userChanged) {
+        historyEntries.push({
+          equipmentId: id,
+          userId: existing.assignedUserId,
+          userName: prevUserName,
+          action: 'RETURNED',
+          notes: lastReturnChecklist?.notes || null,
+          createdAt: new Date(Date.now() + 1)
+        });
+      } else if (updatedEquipment.status === 'IN_USE' && !userChanged) {
+        historyEntries.push({
+          equipmentId: id,
+          userId: updatedEquipment.assignedUserId,
+          userName: nextUserName,
+          action: 'ASSIGNED',
+          notes: existing.status === 'NEEDS_REPLACEMENT' ? 'Powrót do użytku po naprawie' : null,
+          createdAt: new Date(Date.now() + 1)
+        });
+      }
+    }
+
+    for (const entry of historyEntries) {
+      await prisma.equipmentHistory.create({ data: entry });
+    }
 
     res.json(updatedEquipment);
   } catch (error) {
