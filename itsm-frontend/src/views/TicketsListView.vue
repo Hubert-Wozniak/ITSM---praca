@@ -63,9 +63,7 @@
             <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>Kategoria: {{ ticket.category }}</span>
               <span>•</span>
-              <span>
-                Zgłosił(a): {{ ticket.requester ? `${ticket.requester.firstName} ${ticket.requester.lastName}` : 'Brak danych' }}
-              </span>
+              <span>Zgłosił(a): {{ getRequesterName(ticket) }}</span>
               <span>•</span>
               <span>{{ formatDate(ticket.createdAt) }}</span>
             </div>
@@ -145,15 +143,15 @@
             </select>
           </div>
 
-          <!-- PRZYPISANY TECHNIK IT (lista rozwijana z bazy Users) -->
+          <!-- PRZYPISANY TECHNIK IT -->
           <div class="w-44 flex items-center gap-2 justify-end">
             <template v-if="ticket.status === 'RESOLVED'">
-              <div v-if="ticket.assignee" class="flex items-center gap-2 px-2 py-1">
+              <div v-if="getAssigneeName(ticket)" class="flex items-center gap-2 px-2 py-1">
                 <div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-[10px]">
-                  {{ getInitials(ticket.assignee.firstName, ticket.assignee.lastName) }}
+                  {{ getInitialsFromFullName(getAssigneeName(ticket)) }}
                 </div>
                 <span class="text-sm text-slate-500 truncate max-w-[110px]">
-                  {{ ticket.assignee.firstName }} {{ ticket.assignee.lastName }}
+                  {{ getAssigneeName(ticket) }}
                 </span>
               </div>
               <span v-else class="text-xs text-slate-400 italic px-2 py-1">Nieprzypisane</span>
@@ -175,16 +173,16 @@
             </template>
             <template v-else>
               <button
-                v-if="ticket.assignee"
+                v-if="getAssigneeName(ticket)"
                 @click="startEditAssignee(ticket)"
                 class="flex items-center gap-2 hover:bg-slate-200/70 px-2 py-1 rounded transition-colors"
                 title="Kliknij, aby zmienić technika"
               >
                 <div class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
-                  {{ getInitials(ticket.assignee.firstName, ticket.assignee.lastName) }}
+                  {{ getInitialsFromFullName(getAssigneeName(ticket)) }}
                 </div>
                 <span class="text-sm text-slate-700 truncate max-w-[110px]">
-                  {{ ticket.assignee.firstName }} {{ ticket.assignee.lastName }}
+                  {{ getAssigneeName(ticket) }}
                 </span>
               </button>
               <button
@@ -198,8 +196,8 @@
             </template>
           </div>
 
-          <!-- PRZYCISK ZAMKNIJ / WZNÓW + USUŃ -->
-          <div class="flex items-center gap-1.5 pl-2 border-l border-slate-100">
+          <!-- PRZYCISK ZAMKNIJ / WZNÓW -->
+          <div class="flex items-center pl-2 border-l border-slate-100">
             <button
               v-if="ticket.status !== 'RESOLVED'"
               @click="updateTicket(ticket.id, { status: 'RESOLVED' })"
@@ -217,14 +215,6 @@
             >
               <RotateCcwIcon class="w-3.5 h-3.5" />
               Wznów
-            </button>
-
-            <button
-              @click="deleteTicket(ticket.id)"
-              class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Usuń zgłoszenie"
-            >
-              <Trash2Icon class="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -254,7 +244,6 @@
 import { ref, computed, onMounted } from 'vue';
 import {
   SearchIcon,
-  Trash2Icon,
   UserPlusIcon,
   LaptopIcon,
   MessageSquareIcon,
@@ -278,6 +267,20 @@ const editingEquipmentTicketId = ref<number | null>(null);
 const technicians = computed(() =>
   usersList.value.filter(u => u.isActive && (u.role === 'TECHNICIAN' || u.role === 'ADMIN'))
 );
+
+const getRequesterName = (ticket: any) => {
+  if (ticket.requester) {
+    return `${ticket.requester.firstName} ${ticket.requester.lastName}`;
+  }
+  return ticket.requesterName || 'Brak danych';
+};
+
+const getAssigneeName = (ticket: any) => {
+  if (ticket.assignee) {
+    return `${ticket.assignee.firstName} ${ticket.assignee.lastName}`;
+  }
+  return ticket.assigneeName || '';
+};
 
 const fetchTickets = async () => {
   try {
@@ -368,25 +371,6 @@ const saveEquipmentLink = async (ticketId: number, equipmentId: string) => {
   await updateTicket(ticketId, { equipmentId: equipmentId || null });
 };
 
-const deleteTicket = async (id: number) => {
-  if (!confirm(`Czy na pewno chcesz usunąć zgłoszenie IT-${id}?`)) return;
-
-  try {
-    const response = await fetch(`http://localhost:3000/api/tickets/${id}`, {
-      method: 'DELETE'
-    });
-
-    if (response.ok) {
-      if (selectedTicketId.value === id) {
-        selectedTicketId.value = null;
-      }
-      ticketsList.value = ticketsList.value.filter(t => t.id !== id);
-    }
-  } catch (error) {
-    console.error('Błąd usuwania zgłoszenia:', error);
-  }
-};
-
 const startEditAssignee = (ticket: any) => {
   if (ticket.status === 'RESOLVED') return;
   editingAssigneeId.value = ticket.id;
@@ -401,7 +385,7 @@ const filteredTickets = computed(() => {
   return ticketsList.value.filter(t => {
     const query = searchQuery.value.toLowerCase();
     const ticketCode = `it-${t.id}`;
-    const requesterName = t.requester ? `${t.requester.firstName} ${t.requester.lastName}`.toLowerCase() : '';
+    const requesterName = getRequesterName(t).toLowerCase();
     const equipmentMatch =
       (t.equipment?.name || '').toLowerCase().includes(query) ||
       (t.equipment?.serialNumber || '').toLowerCase().includes(query);
@@ -450,8 +434,13 @@ const formatDate = (dateStr: string) => {
   });
 };
 
-const getInitials = (firstName: string, lastName: string) => {
-  return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase();
+const getInitialsFromFullName = (fullName: string) => {
+  return fullName
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 };
 
 onMounted(() => {

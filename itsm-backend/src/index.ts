@@ -178,17 +178,69 @@ app.patch('/api/users/:id', async (req, res) => {
 app.delete('/api/users/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
-    await prisma.user.delete({
-      where: { id }
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true
+      }
     });
-    res.status(204).send();
-  } catch (error: any) {
-    if (error?.code === 'P2003') {
+
+    if (!user) {
+      res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
+      return;
+    }
+
+    const [equipmentCount, openRequestedCount, openAssignedCount] = await Promise.all([
+      prisma.equipment.count({ where: { assignedUserId: id } }),
+      prisma.ticket.count({
+        where: {
+          requesterId: id,
+          status: { not: 'RESOLVED' }
+        }
+      }),
+      prisma.ticket.count({
+        where: {
+          assigneeId: id,
+          status: { not: 'RESOLVED' }
+        }
+      })
+    ]);
+
+    if (equipmentCount > 0) {
       res.status(409).json({
-        error: 'Nie można usunąć użytkownika powiązanego ze zgłoszeniami. Użyj procedury offboardingu (dezaktywacji).'
+        error: `Nie można usunąć użytkownika — nadal posiada przypisany sprzęt (${equipmentCount} szt.). Odbierz urządzenia w Ewidencji Sprzętu.`
       });
       return;
     }
+
+    if (openRequestedCount > 0 || openAssignedCount > 0) {
+      res.status(409).json({
+        error: 'Nie można usunąć użytkownika powiązanego z otwartymi zgłoszeniami. Zamknij lub przepisz aktywne zgłoszenia.'
+      });
+      return;
+    }
+
+    const fullNameSnapshot = `${user.firstName} ${user.lastName}`;
+
+    await prisma.$transaction([
+      prisma.ticket.updateMany({
+        where: { requesterId: id },
+        data: { requesterName: fullNameSnapshot }
+      }),
+      prisma.ticket.updateMany({
+        where: { assigneeId: id },
+        data: { assigneeName: fullNameSnapshot }
+      }),
+      prisma.user.delete({
+        where: { id }
+      })
+    ]);
+
+    res.status(204).send();
+  } catch (error) {
     console.error('Błąd usuwania użytkownika:', error);
     res.status(500).json({ error: 'Nie udało się usunąć użytkownika.' });
   }
@@ -213,6 +265,38 @@ app.get('/api/equipment', async (req, res) => {
   } catch (error) {
     console.error('Błąd pobierania sprzętu:', error);
     res.status(500).json({ error: 'Wystąpił błąd podczas pobierania sprzętu.' });
+  }
+});
+
+app.get('/api/equipment/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const item = await prisma.equipment.findUnique({
+      where: { id },
+      include: {
+        assignedUser: {
+          select: userSummarySelect
+        },
+        tickets: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            requester: {
+              select: userSummarySelect
+            }
+          }
+        }
+      }
+    });
+
+    if (!item) {
+      res.status(404).json({ error: 'Nie znaleziono urządzenia.' });
+      return;
+    }
+
+    res.json(item);
+  } catch (error) {
+    console.error('Błąd pobierania szczegółów urządzenia:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas pobierania szczegółów urządzenia.' });
   }
 });
 
@@ -243,7 +327,15 @@ app.post('/api/equipment', async (req, res) => {
 app.patch('/api/equipment/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
-    const { name, serialNumber, status, assignedUserId, location } = req.body;
+    const {
+      name,
+      serialNumber,
+      status,
+      assignedUserId,
+      location,
+      lastReturnedAt,
+      lastReturnChecklist
+    } = req.body;
 
     const updatedEquipment = await prisma.equipment.update({
       where: { id },
@@ -252,7 +344,9 @@ app.patch('/api/equipment/:id', async (req, res) => {
         ...(serialNumber !== undefined && { serialNumber }),
         ...(status !== undefined && { status }),
         ...(assignedUserId !== undefined && { assignedUserId: assignedUserId || null }),
-        ...(location !== undefined && { location })
+        ...(location !== undefined && { location }),
+        ...(lastReturnedAt !== undefined && { lastReturnedAt: lastReturnedAt ? new Date(lastReturnedAt) : null }),
+        ...(lastReturnChecklist !== undefined && { lastReturnChecklist })
       },
       include: {
         assignedUser: {
@@ -365,6 +459,27 @@ app.post('/api/tickets', async (req, res) => {
       return;
     }
 
+    const requesterUser = await prisma.user.findUnique({
+      where: { id: requesterId },
+      select: { firstName: true, lastName: true }
+    });
+
+    if (!requesterUser) {
+      res.status(404).json({ error: 'Wybrana osoba zgłaszająca nie istnieje.' });
+      return;
+    }
+
+    let assigneeName: string | null = null;
+    if (assigneeId) {
+      const assigneeUser = await prisma.user.findUnique({
+        where: { id: assigneeId },
+        select: { firstName: true, lastName: true }
+      });
+      if (assigneeUser) {
+        assigneeName = `${assigneeUser.firstName} ${assigneeUser.lastName}`;
+      }
+    }
+
     const newTicket = await prisma.ticket.create({
       data: {
         title: title.trim(),
@@ -373,7 +488,9 @@ app.post('/api/tickets', async (req, res) => {
         priority: priority || 'Średni',
         status: 'NEW',
         requesterId,
+        requesterName: `${requesterUser.firstName} ${requesterUser.lastName}`,
         assigneeId: assigneeId || null,
+        assigneeName,
         equipmentId: equipmentId || null
       },
       include: {
@@ -412,6 +529,30 @@ app.patch('/api/tickets/:id', async (req, res) => {
 
     const { title, description, status, requesterId, assigneeId, priority, equipmentId } = req.body;
 
+    let requesterNameUpdate: string | undefined;
+    if (requesterId !== undefined && requesterId) {
+      const reqUser = await prisma.user.findUnique({
+        where: { id: requesterId },
+        select: { firstName: true, lastName: true }
+      });
+      if (reqUser) {
+        requesterNameUpdate = `${reqUser.firstName} ${reqUser.lastName}`;
+      }
+    }
+
+    let assigneeNameUpdate: string | null | undefined;
+    if (assigneeId !== undefined) {
+      if (assigneeId) {
+        const assUser = await prisma.user.findUnique({
+          where: { id: assigneeId },
+          select: { firstName: true, lastName: true }
+        });
+        assigneeNameUpdate = assUser ? `${assUser.firstName} ${assUser.lastName}` : null;
+      } else {
+        assigneeNameUpdate = null;
+      }
+    }
+
     const updatedTicket = await prisma.ticket.update({
       where: { id },
       data: {
@@ -419,7 +560,9 @@ app.patch('/api/tickets/:id', async (req, res) => {
         ...(description !== undefined && { description: description || null }),
         ...(status !== undefined && { status }),
         ...(requesterId !== undefined && { requesterId }),
+        ...(requesterNameUpdate !== undefined && { requesterName: requesterNameUpdate }),
         ...(assigneeId !== undefined && { assigneeId: assigneeId || null }),
+        ...(assigneeNameUpdate !== undefined && { assigneeName: assigneeNameUpdate }),
         ...(priority !== undefined && { priority }),
         ...(equipmentId !== undefined && { equipmentId: equipmentId || null })
       },
@@ -530,6 +673,7 @@ app.get('/api/dashboard', async (req, res) => {
       totalEquipment,
       inStorageEquipment,
       inUseEquipment,
+      returnedEquipment,
       needsReplacementEquipment,
       recentTickets,
       recentEquipment
@@ -547,6 +691,7 @@ app.get('/api/dashboard', async (req, res) => {
       prisma.equipment.count(),
       prisma.equipment.count({ where: { status: 'IN_STORAGE' } }),
       prisma.equipment.count({ where: { status: 'IN_USE' } }),
+      prisma.equipment.count({ where: { status: 'RETURNED' } }),
       prisma.equipment.count({ where: { status: 'NEEDS_REPLACEMENT' } }),
       prisma.ticket.findMany({
         take: 5,
@@ -580,6 +725,7 @@ app.get('/api/dashboard', async (req, res) => {
         total: totalEquipment,
         inStorage: inStorageEquipment,
         inUse: inUseEquipment,
+        returned: returnedEquipment,
         needsReplacement: needsReplacementEquipment
       },
       recentTickets,

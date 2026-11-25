@@ -3,7 +3,7 @@
     <header class="flex justify-between items-end mb-8">
       <div>
         <h2 class="text-2xl font-bold text-slate-900">Ewidencja Sprzętu</h2>
-        <p class="text-slate-500 mt-1">Zarządzanie zasobami IT, przypisaniami i stanem magazynowym.</p>
+        <p class="text-slate-500 mt-1">Zarządzanie zasobami IT, wydaniami, odbiorami i stanem magazynowym.</p>
       </div>
       <button @click="isModalOpen = true" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors">
         + Dodaj sprzęt
@@ -22,8 +22,9 @@
       </div>
       <select v-model="statusFilter" class="px-4 py-2.5 bg-white border border-slate-300 rounded-lg outline-none cursor-pointer">
         <option value="ALL">Wszystkie statusy</option>
-        <option value="IN_STORAGE">W magazynie</option>
+        <option value="IN_STORAGE">W magazynie (gotowe)</option>
         <option value="IN_USE">W użyciu</option>
+        <option value="RETURNED">Odebrany (do przygotowania)</option>
         <option value="NEEDS_REPLACEMENT">Do wymiany</option>
       </select>
     </div>
@@ -43,7 +44,12 @@
           <tr v-for="item in filteredEquipment" :key="item.id" class="hover:bg-slate-50 transition-colors">
             <td class="py-4 px-5">
               <div class="flex items-center gap-2">
-                <span class="font-medium text-slate-900">{{ item.name }}</span>
+                <button
+                  @click="selectedEquipmentId = item.id"
+                  class="font-medium text-slate-900 hover:text-sky-600 transition-colors text-left"
+                >
+                  {{ item.name }}
+                </button>
                 <span
                   v-if="item._count?.tickets > 0"
                   class="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200"
@@ -63,13 +69,20 @@
               >
                 <option value="IN_STORAGE">W magazynie</option>
                 <option value="IN_USE">W użyciu</option>
+                <option value="RETURNED">Odebrany / Do przygotowania</option>
                 <option value="NEEDS_REPLACEMENT">Do wymiany</option>
               </select>
             </td>
 
             <!-- WYDAWANIE SPRZĘTU PRACOWNIKOWI Z BAZY USERS -->
             <td class="py-4 px-4">
-              <template v-if="editingUserId === item.id">
+              <template v-if="item.status === 'RETURNED'">
+                <span class="text-xs text-purple-700 italic px-2 py-1">
+                  Wymaga przygotowania przed wydaniem
+                </span>
+              </template>
+
+              <template v-else-if="editingUserId === item.id">
                 <select
                   :value="item.assignedUserId || ''"
                   @change="saveUser(item, ($event.target as HTMLSelectElement).value)"
@@ -77,18 +90,19 @@
                   class="w-48 px-2.5 py-1 text-xs border border-sky-400 rounded bg-white outline-none"
                   autofocus
                 >
-                  <option value="">— Zwróć do magazynu —</option>
+                  <option value="">— Brak przypisania —</option>
                   <option v-for="user in activeUsers" :key="user.id" :value="user.id">
                     {{ user.firstName }} {{ user.lastName }} ({{ user.department }})
                   </option>
                 </select>
               </template>
+
               <template v-else>
                 <button
                   v-if="item.assignedUser"
                   @click="editingUserId = item.id"
                   class="flex items-center gap-2 hover:bg-slate-200/70 px-2 py-1 rounded transition-colors"
-                  title="Kliknij, aby zmienić pracownika lub cofnąć wydanie"
+                  title="Kliknij, aby zmienić przypisanego pracownika"
                 >
                   <div class="w-6 h-6 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-[10px]">
                     {{ getInitials(item.assignedUser.firstName, item.assignedUser.lastName) }}
@@ -142,14 +156,37 @@
               </template>
             </td>
 
+            <!-- AKCJE CYKLU ŻYCIA (Odbierz / Zatwierdź na magazyn) -->
             <td class="py-4 px-5 text-right">
-              <button
-                @click="deleteEquipment(item)"
-                class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                title="Usuń urządzenie"
-              >
-                <Trash2Icon class="w-4 h-4" />
-              </button>
+              <div class="inline-flex items-center justify-end gap-1.5">
+                <button
+                  v-if="item.assignedUser || item.status === 'IN_USE'"
+                  @click="returningEquipment = item"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors"
+                  title="Odbierz sprzęt od pracownika z checklistą"
+                >
+                  <Undo2Icon class="w-3.5 h-3.5" />
+                  Odbierz
+                </button>
+
+                <button
+                  v-else-if="item.status === 'RETURNED'"
+                  @click="updateEquipment(item.id, { status: 'IN_STORAGE' })"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+                  title="Oznacz sprzęt jako przygotowany i gotowy do ponownego wydania"
+                >
+                  <CheckIcon class="w-3.5 h-3.5" />
+                  Zatwierdź na magazyn
+                </button>
+
+                <button
+                  v-else
+                  @click="selectedEquipmentId = item.id"
+                  class="px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Karta
+                </button>
+              </div>
             </td>
           </tr>
 
@@ -167,13 +204,33 @@
       @close="isModalOpen = false" 
       @submit="handleAddEquipment" 
     />
+
+    <EquipmentReturnModal
+      :equipment="returningEquipment"
+      @close="returningEquipment = null"
+      @completed="fetchEquipment"
+    />
+
+    <EquipmentDetailsDrawer
+      :equipment-id="selectedEquipmentId"
+      @close="selectedEquipmentId = null"
+      @updated="fetchEquipment"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { SearchIcon, Trash2Icon, UserPlusIcon, MapPinIcon } from 'lucide-vue-next';
+import {
+  SearchIcon,
+  UserPlusIcon,
+  MapPinIcon,
+  Undo2Icon,
+  CheckIcon
+} from 'lucide-vue-next';
 import EquipmentFormModal from '../components/EquipmentFormModal.vue';
+import EquipmentReturnModal from '../components/EquipmentReturnModal.vue';
+import EquipmentDetailsDrawer from '../components/EquipmentDetailsDrawer.vue';
 
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
@@ -184,6 +241,9 @@ const usersList = ref<any[]>([]);
 const editingUserId = ref<string | null>(null);
 const editingLocationId = ref<string | null>(null);
 const locationInput = ref('');
+
+const returningEquipment = ref<any | null>(null);
+const selectedEquipmentId = ref<string | null>(null);
 
 const activeUsers = computed(() => usersList.value.filter(u => u.isActive));
 
@@ -251,22 +311,6 @@ const updateEquipment = async (
   }
 };
 
-const deleteEquipment = async (item: any) => {
-  if (!confirm(`Czy na pewno chcesz usunąć "${item.name}" (S/N: ${item.serialNumber})?`)) return;
-
-  try {
-    const response = await fetch(`http://localhost:3000/api/equipment/${item.id}`, {
-      method: 'DELETE'
-    });
-
-    if (response.ok) {
-      equipmentList.value = equipmentList.value.filter(e => e.id !== item.id);
-    }
-  } catch (error) {
-    console.error('Błąd usuwania sprzętu:', error);
-  }
-};
-
 const saveUser = async (item: any, selectedUserId: string) => {
   editingUserId.value = null;
 
@@ -314,6 +358,7 @@ const getStatusStyle = (status: string) => {
   const styles: Record<string, string> = {
     'IN_STORAGE': 'text-slate-700 border border-slate-200 bg-slate-100',
     'IN_USE': 'text-emerald-700 border border-emerald-200 bg-emerald-50',
+    'RETURNED': 'text-purple-700 border border-purple-200 bg-purple-50',
     'NEEDS_REPLACEMENT': 'text-amber-700 border border-amber-200 bg-amber-50'
   };
   return styles[status] || '';

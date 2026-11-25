@@ -12,7 +12,7 @@
           </span>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5">
           <button
             v-if="ticket && ticket.status !== 'RESOLVED'"
             @click="closeTicketAndExit"
@@ -28,6 +28,16 @@
           >
             <RotateCcwIcon class="w-3.5 h-3.5" />
             Wznów zgłoszenie
+          </button>
+
+          <!-- Dyskretne trwałe usunięcie tylko dla Administratora -->
+          <button
+            v-if="ticket && isAdmin"
+            @click="deleteTicketPermanently"
+            class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            title="Usuń zgłoszenie trwale z bazy (Administrator)"
+          >
+            <Trash2Icon class="w-4 h-4" />
           </button>
 
           <button
@@ -65,7 +75,7 @@
           <p class="text-sm text-slate-500 mt-1">
             Zgłosił(a):
             <span class="font-medium text-slate-700">
-              {{ ticket.requester ? `${ticket.requester.firstName} ${ticket.requester.lastName} (${ticket.requester.department})` : 'Brak danych' }}
+              {{ getRequesterDisplay(ticket) }}
             </span>
           </p>
         </div>
@@ -101,16 +111,17 @@
 
           <div>
             <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Technik realizujący</label>
+            <div
+              v-if="ticket.status === 'RESOLVED'"
+              class="w-full px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed truncate"
+            >
+              {{ getAssigneeDisplay(ticket) }}
+            </div>
             <select
+              v-else
               :value="ticket.assigneeId || ''"
-              :disabled="ticket.status === 'RESOLVED'"
               @change="patchTicket({ assigneeId: ($event.target as HTMLSelectElement).value || null })"
-              :class="[
-                'w-full px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 outline-none',
-                ticket.status === 'RESOLVED'
-                  ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                  : 'bg-white cursor-pointer'
-              ]"
+              class="w-full px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white outline-none cursor-pointer"
             >
               <option value="">— Nieprzypisane —</option>
               <option v-for="tech in technicians" :key="tech.id" :value="tech.id">
@@ -272,6 +283,7 @@ import {
   CheckIcon,
   RotateCcwIcon
 } from 'lucide-vue-next';
+import { useCurrentRole } from '../composables/useCurrentRole';
 
 const props = defineProps<{
   ticketId: number | null;
@@ -282,6 +294,7 @@ const emit = defineEmits<{
   (e: 'updated'): void;
 }>();
 
+const { isAdmin } = useCurrentRole();
 const ticket = ref<any | null>(null);
 const usersList = ref<any[]>([]);
 const isLoading = ref(false);
@@ -296,6 +309,20 @@ const isSubmittingComment = ref(false);
 const technicians = computed(() =>
   usersList.value.filter(u => u.isActive && (u.role === 'TECHNICIAN' || u.role === 'ADMIN'))
 );
+
+const getRequesterDisplay = (t: any) => {
+  if (t.requester) {
+    return `${t.requester.firstName} ${t.requester.lastName} (${t.requester.department})`;
+  }
+  return t.requesterName || 'Brak danych';
+};
+
+const getAssigneeDisplay = (t: any) => {
+  if (t.assignee) {
+    return `${t.assignee.firstName} ${t.assignee.lastName}`;
+  }
+  return t.assigneeName || 'Nieprzypisane';
+};
 
 const fetchUsers = async () => {
   try {
@@ -315,8 +342,12 @@ const fetchTicketDetails = async (id: number) => {
     if (response.ok) {
       const data = await response.json();
       ticket.value = data;
-      if (!newCommentAuthor.value && data.assignee) {
-        newCommentAuthor.value = `${data.assignee.firstName} ${data.assignee.lastName}`;
+      if (!newCommentAuthor.value) {
+        if (data.assignee) {
+          newCommentAuthor.value = `${data.assignee.firstName} ${data.assignee.lastName}`;
+        } else if (data.assigneeName) {
+          newCommentAuthor.value = data.assigneeName;
+        }
       }
     }
   } catch (error) {
@@ -360,6 +391,23 @@ const patchTicket = async (payload: Record<string, any>) => {
 const closeTicketAndExit = async () => {
   await patchTicket({ status: 'RESOLVED' });
   emit('close');
+};
+
+const deleteTicketPermanently = async () => {
+  if (!props.ticketId || !isAdmin.value) return;
+  if (!confirm(`Czy na pewno chcesz TRWALE usunąć zgłoszenie IT-${props.ticketId} wraz z całym dziennikiem prac?`)) return;
+
+  try {
+    const response = await fetch(`http://localhost:3000/api/tickets/${props.ticketId}`, {
+      method: 'DELETE'
+    });
+    if (response.ok) {
+      emit('updated');
+      emit('close');
+    }
+  } catch (error) {
+    console.error('Błąd usuwania zgłoszenia:', error);
+  }
 };
 
 const startEditDescription = () => {

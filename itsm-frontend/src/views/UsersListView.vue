@@ -145,13 +145,6 @@
                 >
                   <PencilIcon class="w-4 h-4" />
                 </button>
-                <button
-                  @click="deleteUser(user)"
-                  class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Usuń pracownika"
-                >
-                  <Trash2Icon class="w-4 h-4" />
-                </button>
               </div>
             </td>
           </tr>
@@ -194,7 +187,6 @@ import {
   LaptopIcon,
   TicketIcon,
   PencilIcon,
-  Trash2Icon,
   UserMinusIcon
 } from 'lucide-vue-next';
 import UserFormModal from '../components/UserFormModal.vue';
@@ -255,28 +247,6 @@ const handleSaveUser = async (payload: any) => {
     }
   } catch (error) {
     console.error('Błąd zapisu użytkownika:', error);
-  }
-};
-
-const deleteUser = async (user: any) => {
-  if (!confirm(`Czy na pewno chcesz usunąć konto ${user.firstName} ${user.lastName}?`)) return;
-
-  try {
-    const response = await fetch(`http://localhost:3000/api/users/${user.id}`, {
-      method: 'DELETE'
-    });
-
-    if (response.ok) {
-      if (selectedUserId.value === user.id) {
-        selectedUserId.value = null;
-      }
-      usersList.value = usersList.value.filter(u => u.id !== user.id);
-    } else {
-      const err = await response.json();
-      alert(err.error || 'Nie udało się usunąć użytkownika.');
-    }
-  } catch (error) {
-    console.error('Błąd usuwania użytkownika:', error);
   }
 };
 

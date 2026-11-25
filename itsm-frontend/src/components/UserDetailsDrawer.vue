@@ -18,7 +18,7 @@
           </span>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5">
           <button
             v-if="user && user.isActive"
             @click="triggerOffboarding"
@@ -35,6 +35,16 @@
           >
             <RotateCcwIcon class="w-3.5 h-3.5" />
             Przywróć konto
+          </button>
+
+          <!-- Dyskretne trwałe usunięcie tylko dla Administratora -->
+          <button
+            v-if="user && isAdmin"
+            @click="deleteUserPermanently"
+            class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            title="Usuń użytkownika trwale z bazy (Administrator)"
+          >
+            <Trash2Icon class="w-4 h-4" />
           </button>
 
           <button
@@ -205,8 +215,10 @@ import {
   UserMinusIcon,
   RotateCcwIcon,
   ClipboardCheckIcon,
-  CheckIcon
+  CheckIcon,
+  Trash2Icon
 } from 'lucide-vue-next';
+import { useCurrentRole } from '../composables/useCurrentRole';
 
 const props = defineProps<{
   userId: string | null;
@@ -218,6 +230,7 @@ const emit = defineEmits<{
   (e: 'startOffboarding', userId: string): void;
 }>();
 
+const { isAdmin } = useCurrentRole();
 const user = ref<any | null>(null);
 const isLoading = ref(false);
 
@@ -270,6 +283,27 @@ const reactivateUser = async () => {
     }
   } catch (error) {
     console.error('Błąd przywracania konta:', error);
+  }
+};
+
+const deleteUserPermanently = async () => {
+  if (!user.value || !isAdmin.value) return;
+  if (!confirm(`Czy na pewno chcesz TRWALE usunąć użytkownika ${user.value.firstName} ${user.value.lastName}?\n\nZamknięte zgłoszenia zachowają jego imię i nazwisko.`)) return;
+
+  try {
+    const response = await fetch(`http://localhost:3000/api/users/${user.value.id}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      emit('updated');
+      emit('close');
+    } else {
+      const err = await response.json().catch(() => ({}));
+      alert(err.error || 'Nie udało się usunąć użytkownika.');
+    }
+  } catch (error) {
+    console.error('Błąd usuwania użytkownika:', error);
   }
 };
 

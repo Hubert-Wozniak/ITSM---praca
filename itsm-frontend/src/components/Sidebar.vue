@@ -34,14 +34,45 @@
       </nav>
     </div>
 
-    <div class="p-4 border-t border-slate-700/50">
-      <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 px-2">Konto i rola</p>
-      <div class="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-slate-800 rounded-lg transition-colors">
-        <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-sm">HW</div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm text-white font-medium truncate">Hubert Woźniak</p>
-          <p class="text-xs text-sky-400 truncate">IT_MANAGER</p>
+    <div class="p-4 border-t border-slate-700/50 space-y-3">
+      <div>
+        <p class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 px-2">Konto i rola</p>
+        <div class="flex items-center gap-3 px-2 py-2 rounded-lg">
+          <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-sm shrink-0">HW</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm text-white font-medium truncate">Hubert Woźniak</p>
+            <p class="text-xs truncate" :class="isAdmin ? 'text-amber-400' : 'text-sky-400'">
+              {{ isAdmin ? 'ADMINISTRATOR' : 'TECHNIK IT' }}
+            </p>
+          </div>
         </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-800/90 border border-slate-700/70">
+        <button
+          type="button"
+          @click="setRole('ADMIN')"
+          :class="[
+            'py-1.5 px-2 rounded-md text-xs font-semibold transition-colors',
+            currentRole === 'ADMIN'
+              ? 'bg-amber-500 text-slate-950 shadow-2xs'
+              : 'text-slate-400 hover:text-white'
+          ]"
+        >
+          Admin
+        </button>
+        <button
+          type="button"
+          @click="setRole('TECHNICIAN')"
+          :class="[
+            'py-1.5 px-2 rounded-md text-xs font-semibold transition-colors',
+            currentRole === 'TECHNICIAN'
+              ? 'bg-sky-500 text-white shadow-2xs'
+              : 'text-slate-400 hover:text-white'
+          ]"
+        >
+          Technik IT
+        </button>
       </div>
     </div>
   </aside>
@@ -55,4 +86,7 @@ import {
   MonitorSmartphoneIcon, 
   UsersIcon 
 } from 'lucide-vue-next';
+import { useCurrentRole } from '../composables/useCurrentRole';
+
+const { currentRole, setRole, isAdmin } = useCurrentRole();
 </script>
