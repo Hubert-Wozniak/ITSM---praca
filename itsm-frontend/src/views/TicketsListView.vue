@@ -36,7 +36,7 @@
           v-for="ticket in filteredTickets"
           :key="ticket.id"
           :class="[
-            'p-4 transition-colors flex items-center gap-4',
+            'p-4 transition-colors flex items-center gap-4 group',
             ticket.status === 'RESOLVED' ? 'bg-slate-50/90 opacity-65' : 'hover:bg-slate-50'
           ]"
         >
@@ -47,14 +47,14 @@
           <div class="flex-1 min-w-0">
             <button
               @click="selectedTicketId = ticket.id"
-              class="text-left group block max-w-full"
+              class="text-left group/title block max-w-full"
             >
               <h4
                 :class="[
                   'font-medium mb-1 transition-colors truncate',
                   ticket.status === 'RESOLVED'
                     ? 'text-slate-600'
-                    : 'text-slate-900 group-hover:text-sky-600'
+                    : 'text-slate-900 group-hover/title:text-sky-600'
                 ]"
               >
                 {{ ticket.title }}
@@ -196,8 +196,8 @@
             </template>
           </div>
 
-          <!-- PRZYCISK ZAMKNIJ / WZNÓW -->
-          <div class="flex items-center pl-2 border-l border-slate-100">
+          <!-- PRZYCISK ZAMKNIJ / WZNÓW + STRZAŁKA KARTY ZGŁOSZENIA -->
+          <div class="flex items-center gap-1.5 pl-2 border-l border-slate-100">
             <button
               v-if="ticket.status !== 'RESOLVED'"
               @click="updateTicket(ticket.id, { status: 'RESOLVED' })"
@@ -215,6 +215,15 @@
             >
               <RotateCcwIcon class="w-3.5 h-3.5" />
               Wznów
+            </button>
+
+            <button
+              type="button"
+              @click="selectedTicketId = ticket.id"
+              class="p-1.5 text-slate-400 group-hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
+              title="Otwórz szczegóły zgłoszenia i dziennik prac"
+            >
+              <ChevronRightIcon class="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -248,7 +257,8 @@ import {
   LaptopIcon,
   MessageSquareIcon,
   CheckIcon,
-  RotateCcwIcon
+  RotateCcwIcon,
+  ChevronRightIcon
 } from 'lucide-vue-next';
 import TicketFormModal from '../components/TicketFormModal.vue';
 import TicketDetailsDrawer from '../components/TicketDetailsDrawer.vue';
