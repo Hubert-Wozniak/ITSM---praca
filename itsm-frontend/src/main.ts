@@ -1,8 +1,11 @@
-import './style.css'
-import { createApp } from 'vue'
-import App from './App.vue'
-import router from './router'
+import { createApp } from 'vue';
+import './style.css';
+import App from './App.vue';
+import router from './router';
+import { setupFetchInterceptor } from './utils/fetchInterceptor';
 
-const app = createApp(App)
-app.use(router)
-app.mount('#app')
+setupFetchInterceptor(router);
+
+const app = createApp(App);
+app.use(router);
+app.mount('#app');

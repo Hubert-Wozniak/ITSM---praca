@@ -1,21 +1,17 @@
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
+import { useAuth } from './useAuth';
 
-export type AppRole = 'ADMIN' | 'TECHNICIAN';
-
-const STORAGE_KEY = 'itsm_active_role';
-const currentRole = ref<AppRole>((localStorage.getItem(STORAGE_KEY) as AppRole) || 'ADMIN');
+export type ActiveRole = 'ADMIN' | 'TECHNICIAN';
 
 export function useCurrentRole() {
-  const setRole = (role: AppRole) => {
-    currentRole.value = role;
-    localStorage.setItem(STORAGE_KEY, role);
-  };
+  const { currentUser, isAdmin } = useAuth();
 
-  const isAdmin = computed(() => currentRole.value === 'ADMIN');
+  const currentRole = computed<ActiveRole>(() =>
+    currentUser.value?.role === 'ADMIN' ? 'ADMIN' : 'TECHNICIAN'
+  );
 
   return {
     currentRole,
-    setRole,
     isAdmin
   };
 }

@@ -2,12 +2,21 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
+import {
+  type AuthenticatedRequest,
+  createAuthMiddleware,
+  ensureDefaultAccounts,
+  hashPassword,
+  signAuthToken,
+  verifyPassword
+} from './auth.js';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 const prisma = new PrismaClient();
+const { requireAuth, requireAdmin } = createAuthMiddleware(prisma);
 
 app.use(cors());
 app.use(express.json());
@@ -22,9 +31,75 @@ const userSummarySelect = {
   isActive: true
 };
 
+const safeUserSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  phone: true,
+  department: true,
+  position: true,
+  role: true,
+  isActive: true,
+  offboardedAt: true,
+  offboardingChecklist: true,
+  createdAt: true,
+  updatedAt: true
+};
+
+// --- UWIERZYTELNIANIE (AUTH) ---
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email?.trim() || !password) {
+      res.status(400).json({ error: 'Podaj adres e-mail oraz hasło.' });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: email.trim().toLowerCase() }
+    });
+
+    if (!user || !user.passwordHash) {
+      res.status(401).json({ error: 'Nieprawidłowy adres e-mail lub hasło.' });
+      return;
+    }
+
+    if (!user.isActive) {
+      res.status(403).json({ error: 'Konto zostało dezaktywowane w procedurze offboardingu.' });
+      return;
+    }
+
+    if (user.role !== 'ADMIN' && user.role !== 'TECHNICIAN') {
+      res.status(403).json({ error: 'Brak uprawnień do logowania w panelu serwisowym.' });
+      return;
+    }
+
+    const isValid = await verifyPassword(password, user.passwordHash);
+    if (!isValid) {
+      res.status(401).json({ error: 'Nieprawidłowy adres e-mail lub hasło.' });
+      return;
+    }
+
+    const token = signAuthToken({ id: user.id, role: user.role });
+    const { passwordHash: _ignored, ...safeUser } = user;
+
+    res.json({ token, user: safeUser });
+  } catch (error) {
+    console.error('Błąd logowania:', error);
+    res.status(500).json({ error: 'Wystąpił błąd podczas logowania.' });
+  }
+});
+
+app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res) => {
+  res.json({ user: req.authUser });
+});
+
 // --- UŻYTKOWNICY (USERS) ---
 
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', requireAuth, async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: [
@@ -32,7 +107,8 @@ app.get('/api/users', async (req, res) => {
         { lastName: 'asc' },
         { firstName: 'asc' }
       ],
-      include: {
+      select: {
+        ...safeUserSelect,
         _count: {
           select: {
             equipment: true,
@@ -49,12 +125,13 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-app.get('/api/users/:id', async (req, res) => {
+app.get('/api/users/:id', requireAuth, async (req, res) => {
   try {
     const id = String(req.params.id);
     const user = await prisma.user.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...safeUserSelect,
         equipment: {
           orderBy: { name: 'asc' }
         },
@@ -81,14 +158,16 @@ app.get('/api/users/:id', async (req, res) => {
   }
 });
 
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', requireAuth, async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, department, position, role } = req.body;
+    const { firstName, lastName, email, phone, department, position, role, password } = req.body;
 
     if (!firstName?.trim() || !lastName?.trim() || !email?.trim() || !department?.trim()) {
       res.status(400).json({ error: 'Imię, nazwisko, e-mail oraz dział są wymagane.' });
       return;
     }
+
+    const passwordHash = password?.trim() ? await hashPassword(password.trim()) : null;
 
     const newUser = await prisma.user.create({
       data: {
@@ -99,9 +178,11 @@ app.post('/api/users', async (req, res) => {
         department: department.trim(),
         position: position?.trim() || null,
         role: role || 'EMPLOYEE',
+        passwordHash,
         isActive: true
       },
-      include: {
+      select: {
+        ...safeUserSelect,
         _count: {
           select: {
             equipment: true,
@@ -123,7 +204,7 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-app.patch('/api/users/:id', async (req, res) => {
+app.patch('/api/users/:id', requireAuth, async (req, res) => {
   try {
     const id = String(req.params.id);
     const {
@@ -134,10 +215,14 @@ app.patch('/api/users/:id', async (req, res) => {
       department,
       position,
       role,
+      password,
       isActive,
       offboardedAt,
       offboardingChecklist
     } = req.body;
+
+    const passwordHashUpdate =
+      password !== undefined && password.trim() ? await hashPassword(password.trim()) : undefined;
 
     const updatedUser = await prisma.user.update({
       where: { id },
@@ -149,11 +234,13 @@ app.patch('/api/users/:id', async (req, res) => {
         ...(department !== undefined && { department: department.trim() }),
         ...(position !== undefined && { position: position?.trim() || null }),
         ...(role !== undefined && { role }),
+        ...(passwordHashUpdate !== undefined && { passwordHash: passwordHashUpdate }),
         ...(isActive !== undefined && { isActive }),
         ...(offboardedAt !== undefined && { offboardedAt: offboardedAt ? new Date(offboardedAt) : null }),
         ...(offboardingChecklist !== undefined && { offboardingChecklist })
       },
-      include: {
+      select: {
+        ...safeUserSelect,
         _count: {
           select: {
             equipment: true,
@@ -175,9 +262,14 @@ app.patch('/api/users/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/users/:id', async (req, res) => {
+app.delete('/api/users/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const id = String(req.params.id);
+
+    if (req.authUser?.id === id) {
+      res.status(400).json({ error: 'Nie możesz trwale usunąć aktualnie zalogowanego konta administratora.' });
+      return;
+    }
 
     const user = await prisma.user.findUnique({
       where: { id },
@@ -252,7 +344,7 @@ app.delete('/api/users/:id', async (req, res) => {
 
 // --- SPRZĘT (EQUIPMENT) ---
 
-app.get('/api/equipment', async (req, res) => {
+app.get('/api/equipment', requireAuth, async (req, res) => {
   try {
     const equipment = await prisma.equipment.findMany({
       orderBy: { createdAt: 'desc' },
@@ -272,7 +364,7 @@ app.get('/api/equipment', async (req, res) => {
   }
 });
 
-app.get('/api/equipment/:id', async (req, res) => {
+app.get('/api/equipment/:id', requireAuth, async (req, res) => {
   try {
     const id = String(req.params.id);
     const item = await prisma.equipment.findUnique({
@@ -312,10 +404,11 @@ app.get('/api/equipment/:id', async (req, res) => {
   }
 });
 
-app.post('/api/equipment', async (req, res) => {
+app.post('/api/equipment', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { name, serialNumber, status, assignedUserId, location } = req.body;
     const initialStatus = status || 'IN_STORAGE';
+    const actorName = req.authUser ? `${req.authUser.firstName} ${req.authUser.lastName}` : null;
 
     const newEquipment = await prisma.equipment.create({
       data: {
@@ -335,6 +428,7 @@ app.post('/api/equipment', async (req, res) => {
     await prisma.equipmentHistory.create({
       data: {
         equipmentId: newEquipment.id,
+        performedByName: actorName,
         action: 'CREATED',
         notes: initialStatus === 'NEEDS_REPLACEMENT' ? 'Dodano z oznaczeniem: Do wymiany / naprawy' : 'Przyjęto do ewidencji CMDB'
       }
@@ -346,6 +440,7 @@ app.post('/api/equipment', async (req, res) => {
           equipmentId: newEquipment.id,
           userId: newEquipment.assignedUserId,
           userName: `${newEquipment.assignedUser.firstName} ${newEquipment.assignedUser.lastName}`,
+          performedByName: actorName,
           action: 'ASSIGNED',
           createdAt: new Date(Date.now() + 1)
         }
@@ -359,7 +454,7 @@ app.post('/api/equipment', async (req, res) => {
   }
 });
 
-app.patch('/api/equipment/:id', async (req, res) => {
+app.patch('/api/equipment/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const id = String(req.params.id);
     const {
@@ -404,6 +499,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
       }
     });
 
+    const actorName = req.authUser ? `${req.authUser.firstName} ${req.authUser.lastName}` : null;
     const prevUserName = existing.assignedUser
       ? `${existing.assignedUser.firstName} ${existing.assignedUser.lastName}`
       : null;
@@ -419,6 +515,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
       equipmentId: string;
       userId?: string | null;
       userName?: string | null;
+      performedByName?: string | null;
       action: string;
       notes?: string | null;
       createdAt?: Date;
@@ -430,6 +527,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
           equipmentId: id,
           userId: updatedEquipment.assignedUserId,
           userName: nextUserName,
+          performedByName: actorName,
           action: 'ASSIGNED'
         });
       } else if (existing.assignedUserId && updatedEquipment.assignedUserId) {
@@ -437,6 +535,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
           equipmentId: id,
           userId: updatedEquipment.assignedUserId,
           userName: nextUserName,
+          performedByName: actorName,
           action: 'TRANSFERRED',
           notes: prevUserName ? `Poprzedni użytkownik: ${prevUserName}` : null
         });
@@ -445,6 +544,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
           equipmentId: id,
           userId: existing.assignedUserId,
           userName: prevUserName,
+          performedByName: actorName,
           action: 'RETURNED',
           notes: lastReturnChecklist?.notes || null
         });
@@ -457,6 +557,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
           equipmentId: id,
           userId: updatedEquipment.assignedUserId,
           userName: nextUserName,
+          performedByName: actorName,
           action: 'NEEDS_REPLACEMENT',
           createdAt: new Date(Date.now() + 1)
         });
@@ -471,6 +572,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
           equipmentId: id,
           userId: updatedEquipment.assignedUserId,
           userName: nextUserName,
+          performedByName: actorName,
           action: 'IN_STORAGE',
           notes: storageNote,
           createdAt: new Date(Date.now() + 1)
@@ -480,6 +582,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
           equipmentId: id,
           userId: existing.assignedUserId,
           userName: prevUserName,
+          performedByName: actorName,
           action: 'RETURNED',
           notes: lastReturnChecklist?.notes || null,
           createdAt: new Date(Date.now() + 1)
@@ -489,6 +592,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
           equipmentId: id,
           userId: updatedEquipment.assignedUserId,
           userName: nextUserName,
+          performedByName: actorName,
           action: 'ASSIGNED',
           notes: existing.status === 'NEEDS_REPLACEMENT' ? 'Powrót do użytku po naprawie' : null,
           createdAt: new Date(Date.now() + 1)
@@ -507,7 +611,7 @@ app.patch('/api/equipment/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/equipment/:id', async (req, res) => {
+app.delete('/api/equipment/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = String(req.params.id);
     await prisma.equipment.delete({
@@ -522,7 +626,7 @@ app.delete('/api/equipment/:id', async (req, res) => {
 
 // --- ZGŁOSZENIA (TICKETS) ---
 
-app.get('/api/tickets', async (req, res) => {
+app.get('/api/tickets', requireAuth, async (req, res) => {
   try {
     const tickets = await prisma.ticket.findMany({
       orderBy: { createdAt: 'desc' },
@@ -552,7 +656,7 @@ app.get('/api/tickets', async (req, res) => {
   }
 });
 
-app.get('/api/tickets/:id', async (req, res) => {
+app.get('/api/tickets/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -595,7 +699,7 @@ app.get('/api/tickets/:id', async (req, res) => {
   }
 });
 
-app.post('/api/tickets', async (req, res) => {
+app.post('/api/tickets', requireAuth, async (req, res) => {
   try {
     const { title, description, category, priority, requesterId, assigneeId, equipmentId } = req.body;
 
@@ -664,7 +768,7 @@ app.post('/api/tickets', async (req, res) => {
   }
 });
 
-app.patch('/api/tickets/:id', async (req, res) => {
+app.patch('/api/tickets/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -738,7 +842,7 @@ app.patch('/api/tickets/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/tickets/:id', async (req, res) => {
+app.delete('/api/tickets/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -757,7 +861,7 @@ app.delete('/api/tickets/:id', async (req, res) => {
   }
 });
 
-app.post('/api/tickets/:id/comments', async (req, res) => {
+app.post('/api/tickets/:id/comments', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const ticketId = Number(req.params.id);
     if (isNaN(ticketId)) {
@@ -766,7 +870,11 @@ app.post('/api/tickets/:id/comments', async (req, res) => {
     }
 
     const { author, content } = req.body;
-    if (!author?.trim() || !content?.trim()) {
+    const resolvedAuthor =
+      author?.trim() ||
+      (req.authUser ? `${req.authUser.firstName} ${req.authUser.lastName}` : '');
+
+    if (!resolvedAuthor || !content?.trim()) {
       res.status(400).json({ error: 'Autor i treść wpisu są wymagane.' });
       return;
     }
@@ -774,7 +882,7 @@ app.post('/api/tickets/:id/comments', async (req, res) => {
     const newComment = await prisma.comment.create({
       data: {
         ticketId,
-        author: author.trim(),
+        author: resolvedAuthor,
         content: content.trim()
       }
     });
@@ -786,7 +894,7 @@ app.post('/api/tickets/:id/comments', async (req, res) => {
   }
 });
 
-app.delete('/api/comments/:id', async (req, res) => {
+app.delete('/api/comments/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -807,7 +915,7 @@ app.delete('/api/comments/:id', async (req, res) => {
 
 // --- DASHBOARD (STATYSTYKI) ---
 
-app.get('/api/dashboard', async (req, res) => {
+app.get('/api/dashboard', requireAuth, async (req, res) => {
   try {
     const [
       totalTickets,
@@ -882,6 +990,8 @@ app.get('/api/dashboard', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Serwer działa na porcie http://localhost:${port}`);
+ensureDefaultAccounts(prisma).then(() => {
+  app.listen(port, () => {
+    console.log(`🚀 Serwer działa na porcie http://localhost:${port}`);
+  });
 });

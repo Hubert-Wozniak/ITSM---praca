@@ -16,6 +16,7 @@ model User {
   department           String
   position             String?
   role                 String             @default("EMPLOYEE")
+  passwordHash         String?
   isActive             Boolean            @default(true)
   offboardedAt         DateTime?
   offboardingChecklist Json?
@@ -44,15 +45,16 @@ model Equipment {
 }
 
 model EquipmentHistory {
-  id          String    @id @default(uuid())
-  equipmentId String
-  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  userId      String?
-  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userName    String?
-  action      String
-  notes       String?
-  createdAt   DateTime  @default(now())
+  id              String    @id @default(uuid())
+  equipmentId     String
+  equipment       Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName        String?
+  performedByName String?
+  action          String
+  notes           String?
+  createdAt       DateTime  @default(now())
 }
 
 model Ticket {
