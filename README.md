@@ -116,12 +116,3 @@ Testy integracyjne (Vitest + Supertest) weryfikują uwierzytelnianie JWT, ochron
 cd itsm-backend
 npm test
 npm run seed   # przywrócenie danych demonstracyjnych po zakończeniu testów
-```
-```
-
-Zapisz wygenerowany plik jako **`README.md`** w głównym katalogu projektu (`C:\Projekty\ITSM - praca\README.md`) i wypchnij go do repozytorium:
-
-```powershell
-git add README.md
-git commit -m "docs: dodanie dokumentacji projektu README.md"
-git push
