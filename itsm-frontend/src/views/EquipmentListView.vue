@@ -221,7 +221,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import {
   SearchIcon,
   UserPlusIcon,
@@ -233,6 +234,9 @@ import {
 import EquipmentFormModal from '../components/EquipmentFormModal.vue';
 import EquipmentReturnModal from '../components/EquipmentReturnModal.vue';
 import EquipmentDetailsDrawer from '../components/EquipmentDetailsDrawer.vue';
+
+const route = useRoute();
+const router = useRouter();
 
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
@@ -248,6 +252,15 @@ const returningEquipment = ref<any | null>(null);
 const selectedEquipmentId = ref<string | null>(null);
 
 const activeUsers = computed(() => usersList.value.filter(u => u.isActive));
+
+const applyRouteQuery = () => {
+  if (typeof route.query.equipmentId === 'string' && route.query.equipmentId) {
+    selectedEquipmentId.value = route.query.equipmentId;
+    router.replace({ path: '/equipment', query: {} });
+  }
+};
+
+watch(() => route.query, applyRouteQuery);
 
 const fetchEquipment = async () => {
   try {
@@ -371,6 +384,7 @@ const getInitials = (firstName: string, lastName: string) => {
 };
 
 onMounted(() => {
+  applyRouteQuery();
   fetchEquipment();
   fetchUsers();
 });

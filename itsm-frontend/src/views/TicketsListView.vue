@@ -5,7 +5,7 @@
         <h2 class="text-2xl font-bold text-slate-900">Zgłoszenia serwisowe</h2>
         <p class="text-slate-500 mt-1">Zarządzanie awariami, dziennikiem prac i wnioskami pracowników.</p>
       </div>
-      <button @click="isModalOpen = true" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors">
+      <button @click="openNewTicketModal" class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors">
         + Nowe zgłoszenie
       </button>
     </header>
@@ -237,6 +237,8 @@
 
     <TicketFormModal 
       :is-open="isModalOpen" 
+      :initial-requester-id="initialRequesterId"
+      :initial-equipment-id="initialEquipmentId"
       @close="isModalOpen = false" 
       @submit="handleAddTicket" 
     />
@@ -250,7 +252,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import {
   SearchIcon,
   UserPlusIcon,
@@ -263,9 +266,14 @@ import {
 import TicketFormModal from '../components/TicketFormModal.vue';
 import TicketDetailsDrawer from '../components/TicketDetailsDrawer.vue';
 
+const route = useRoute();
+const router = useRouter();
+
 const searchQuery = ref('');
 const statusFilter = ref('ACTIVE');
 const isModalOpen = ref(false);
+const initialRequesterId = ref<string | null>(null);
+const initialEquipmentId = ref<string | null>(null);
 const selectedTicketId = ref<number | null>(null);
 const ticketsList = ref<any[]>([]);
 const equipmentList = ref<any[]>([]);
@@ -277,6 +285,29 @@ const editingEquipmentTicketId = ref<number | null>(null);
 const technicians = computed(() =>
   usersList.value.filter(u => u.isActive && (u.role === 'TECHNICIAN' || u.role === 'ADMIN'))
 );
+
+const openNewTicketModal = () => {
+  initialRequesterId.value = null;
+  initialEquipmentId.value = null;
+  isModalOpen.value = true;
+};
+
+const applyRouteQuery = () => {
+  if (route.query.ticketId) {
+    const parsed = Number(route.query.ticketId);
+    if (!isNaN(parsed)) {
+      selectedTicketId.value = parsed;
+    }
+    router.replace({ path: '/tickets', query: {} });
+  } else if (route.query.create === '1') {
+    initialRequesterId.value = typeof route.query.requesterId === 'string' ? route.query.requesterId : null;
+    initialEquipmentId.value = typeof route.query.equipmentId === 'string' ? route.query.equipmentId : null;
+    isModalOpen.value = true;
+    router.replace({ path: '/tickets', query: {} });
+  }
+};
+
+watch(() => route.query, applyRouteQuery);
 
 const getRequesterName = (ticket: any) => {
   if (ticket.requester) {
@@ -454,6 +485,7 @@ const getInitialsFromFullName = (fullName: string) => {
 };
 
 onMounted(() => {
+  applyRouteQuery();
   fetchTickets();
   fetchEquipment();
   fetchUsers();

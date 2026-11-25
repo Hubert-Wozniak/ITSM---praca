@@ -2,15 +2,25 @@
   <div v-if="equipmentId !== null" class="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-xs" @click.self="$emit('close')">
     <aside class="w-full max-w-2xl bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col">
       <!-- Nagłówek panelu -->
-      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
-        <div class="flex items-center gap-3">
-          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Karta urządzenia CMDB</span>
-          <span v-if="item" :class="['px-2.5 py-0.5 rounded-full text-xs font-semibold', getStatusStyle(item.status)]">
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70 gap-2">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">Karta urządzenia CMDB</span>
+          <span v-if="item" :class="['px-2.5 py-0.5 rounded-full text-xs font-semibold shrink-0', getStatusStyle(item.status)]">
             {{ getStatusLabel(item.status) }}
           </span>
         </div>
 
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button
+            v-if="item"
+            @click="createTicketForEquipment"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
+            title="Utwórz zgłoszenie serwisowe powiązane z tym urządzeniem"
+          >
+            <PlusIcon class="w-3.5 h-3.5" />
+            Zgłoś usterkę
+          </button>
+
           <!-- Dyskretne trwałe usunięcie tylko dla Administratora -->
           <button
             v-if="item && isAdmin"
@@ -115,6 +125,10 @@
                 <p v-if="entry.notes" class="text-xs text-slate-500 mt-1">
                   {{ entry.notes }}
                 </p>
+
+                <p v-if="entry.performedByName" class="text-[11px] text-slate-400 mt-1.5">
+                  Operator IT: {{ entry.performedByName }}
+                </p>
               </div>
             </div>
           </div>
@@ -164,20 +178,29 @@
           </h4>
 
           <div v-if="item.tickets && item.tickets.length > 0" class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            <div v-for="t in item.tickets" :key="t.id" class="p-3.5 bg-white flex items-center justify-between gap-3">
+            <button
+              v-for="t in item.tickets"
+              :key="t.id"
+              type="button"
+              @click="openTicket(t.id)"
+              class="w-full p-3.5 bg-white hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 text-left group"
+            >
               <div class="min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-semibold text-slate-400">IT-{{ t.id }}</span>
-                  <p class="text-sm font-medium text-slate-900 truncate">{{ t.title }}</p>
+                  <p class="text-sm font-medium text-slate-900 group-hover:text-sky-600 transition-colors truncate">{{ t.title }}</p>
                 </div>
                 <p class="text-xs text-slate-400 mt-0.5">
                   Zgłosił(a): {{ getRequesterDisplay(t) }} • {{ formatDate(t.createdAt) }}
                 </p>
               </div>
-              <span :class="['px-2 py-0.5 rounded text-xs font-semibold shrink-0', getTicketStatusStyle(t.status)]">
-                {{ getTicketStatusLabel(t.status) }}
-              </span>
-            </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span :class="['px-2 py-0.5 rounded text-xs font-semibold', getTicketStatusStyle(t.status)]">
+                  {{ getTicketStatusLabel(t.status) }}
+                </span>
+                <ChevronRightIcon class="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors" />
+              </div>
+            </button>
           </div>
 
           <div v-else class="p-5 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
@@ -191,6 +214,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import {
   XIcon,
   LaptopIcon,
@@ -204,7 +228,9 @@ import {
   ArrowRightLeftIcon,
   Undo2Icon,
   WrenchIcon,
-  PackageCheckIcon
+  PackageCheckIcon,
+  PlusIcon,
+  ChevronRightIcon
 } from 'lucide-vue-next';
 import { useCurrentRole } from '../composables/useCurrentRole';
 
@@ -217,6 +243,7 @@ const emit = defineEmits<{
   (e: 'updated'): void;
 }>();
 
+const router = useRouter();
 const { isAdmin } = useCurrentRole();
 const item = ref<any | null>(null);
 const isLoading = ref(false);
@@ -245,6 +272,24 @@ watch(
     }
   }
 );
+
+const createTicketForEquipment = () => {
+  if (!item.value) return;
+  const query: Record<string, string> = {
+    create: '1',
+    equipmentId: item.value.id
+  };
+  if (item.value.assignedUserId) {
+    query.requesterId = item.value.assignedUserId;
+  }
+  emit('close');
+  router.push({ path: '/tickets', query });
+};
+
+const openTicket = (ticketId: number) => {
+  emit('close');
+  router.push({ path: '/tickets', query: { ticketId: String(ticketId) } });
+};
 
 const markReadyInStorage = async () => {
   if (!item.value) return;

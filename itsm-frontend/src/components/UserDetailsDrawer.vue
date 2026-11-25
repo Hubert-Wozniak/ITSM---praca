@@ -20,6 +20,16 @@
 
         <div class="flex items-center gap-1.5 shrink-0">
           <button
+            v-if="user && user.isActive"
+            @click="createTicketForUser"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
+            title="Utwórz nowe zgłoszenie dla tego pracownika"
+          >
+            <PlusIcon class="w-3.5 h-3.5" />
+            Zgłoś
+          </button>
+
+          <button
             v-if="user"
             @click="isEditModalOpen = true"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors"
@@ -139,17 +149,26 @@
           </h4>
 
           <div v-if="user.equipment && user.equipment.length > 0" class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            <div v-for="eq in user.equipment" :key="eq.id" class="p-3.5 bg-white flex items-center justify-between gap-3">
+            <button
+              v-for="eq in user.equipment"
+              :key="eq.id"
+              type="button"
+              @click="openEquipment(eq.id)"
+              class="w-full p-3.5 bg-white hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 text-left group"
+            >
               <div>
-                <p class="text-sm font-medium text-slate-900">{{ eq.name }}</p>
+                <p class="text-sm font-medium text-slate-900 group-hover:text-sky-600 transition-colors">{{ eq.name }}</p>
                 <p class="text-xs font-mono text-slate-400">
                   S/N: {{ eq.serialNumber }}{{ eq.location ? ` • ${eq.location}` : '' }}
                 </p>
               </div>
-              <span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                W użyciu
-              </span>
-            </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  W użyciu
+                </span>
+                <ChevronRightIcon class="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors" />
+              </div>
+            </button>
           </div>
 
           <div v-else class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
@@ -165,18 +184,27 @@
           </h4>
 
           <div v-if="user.requestedTickets && user.requestedTickets.length > 0" class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            <div v-for="t in user.requestedTickets" :key="t.id" class="p-3.5 bg-white flex items-center justify-between gap-3">
+            <button
+              v-for="t in user.requestedTickets"
+              :key="t.id"
+              type="button"
+              @click="openTicket(t.id)"
+              class="w-full p-3.5 bg-white hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 text-left group"
+            >
               <div class="min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-semibold text-slate-400">IT-{{ t.id }}</span>
-                  <p class="text-sm font-medium text-slate-900 truncate">{{ t.title }}</p>
+                  <p class="text-sm font-medium text-slate-900 group-hover:text-sky-600 transition-colors truncate">{{ t.title }}</p>
                 </div>
                 <p class="text-xs text-slate-400 mt-0.5">{{ t.category }} • {{ formatDate(t.createdAt) }}</p>
               </div>
-              <span :class="['px-2 py-0.5 rounded text-xs font-semibold shrink-0', getTicketStatusStyle(t.status)]">
-                {{ getTicketStatusLabel(t.status) }}
-              </span>
-            </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span :class="['px-2 py-0.5 rounded text-xs font-semibold', getTicketStatusStyle(t.status)]">
+                  {{ getTicketStatusLabel(t.status) }}
+                </span>
+                <ChevronRightIcon class="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors" />
+              </div>
+            </button>
           </div>
 
           <div v-else class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
@@ -191,18 +219,27 @@
           </h4>
 
           <div v-if="user.assignedTickets && user.assignedTickets.length > 0" class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            <div v-for="t in user.assignedTickets" :key="t.id" class="p-3.5 bg-white flex items-center justify-between gap-3">
+            <button
+              v-for="t in user.assignedTickets"
+              :key="t.id"
+              type="button"
+              @click="openTicket(t.id)"
+              class="w-full p-3.5 bg-white hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 text-left group"
+            >
               <div class="min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-semibold text-slate-400">IT-{{ t.id }}</span>
-                  <p class="text-sm font-medium text-slate-900 truncate">{{ t.title }}</p>
+                  <p class="text-sm font-medium text-slate-900 group-hover:text-sky-600 transition-colors truncate">{{ t.title }}</p>
                 </div>
                 <p class="text-xs text-slate-400 mt-0.5">{{ formatDate(t.createdAt) }}</p>
               </div>
-              <span :class="['px-2 py-0.5 rounded text-xs font-semibold shrink-0', getTicketStatusStyle(t.status)]">
-                {{ getTicketStatusLabel(t.status) }}
-              </span>
-            </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span :class="['px-2 py-0.5 rounded text-xs font-semibold', getTicketStatusStyle(t.status)]">
+                  {{ getTicketStatusLabel(t.status) }}
+                </span>
+                <ChevronRightIcon class="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors" />
+              </div>
+            </button>
           </div>
 
           <div v-else class="p-4 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
@@ -223,6 +260,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import {
   XIcon,
   LaptopIcon,
@@ -234,7 +272,9 @@ import {
   ClipboardCheckIcon,
   CheckIcon,
   Trash2Icon,
-  PencilIcon
+  PencilIcon,
+  PlusIcon,
+  ChevronRightIcon
 } from 'lucide-vue-next';
 import { useCurrentRole } from '../composables/useCurrentRole';
 import UserFormModal from './UserFormModal.vue';
@@ -249,6 +289,7 @@ const emit = defineEmits<{
   (e: 'startOffboarding', userId: string): void;
 }>();
 
+const router = useRouter();
 const { isAdmin } = useCurrentRole();
 const user = ref<any | null>(null);
 const isLoading = ref(false);
@@ -279,6 +320,35 @@ watch(
     }
   }
 );
+
+const createTicketForUser = () => {
+  if (!user.value) return;
+  const requesterId = user.value.id;
+  emit('close');
+  router.push({
+    path: '/tickets',
+    query: {
+      create: '1',
+      requesterId
+    }
+  });
+};
+
+const openEquipment = (equipmentId: string) => {
+  emit('close');
+  router.push({
+    path: '/equipment',
+    query: { equipmentId }
+  });
+};
+
+const openTicket = (ticketId: number) => {
+  emit('close');
+  router.push({
+    path: '/tickets',
+    query: { ticketId: String(ticketId) }
+  });
+};
 
 const handleUpdateUser = async (payload: any) => {
   if (!user.value) return;
